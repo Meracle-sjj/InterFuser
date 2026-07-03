@@ -25,10 +25,10 @@ def add_rect(img, loc, ori, box, value, pixels_per_meter, max_distance, color):
     left_down = (loc + hor_offset - vet_offset + max_distance) * pixels_per_meter
     right_up = (loc - hor_offset + vet_offset + max_distance) * pixels_per_meter
     right_down = (loc - hor_offset - vet_offset + max_distance) * pixels_per_meter
-    left_up = np.around(left_up).astype(np.int)
-    left_down = np.around(left_down).astype(np.int)
-    right_down = np.around(right_down).astype(np.int)
-    right_up = np.around(right_up).astype(np.int)
+    left_up = np.around(left_up).astype(np.int32)
+    left_down = np.around(left_down).astype(np.int32)
+    right_down = np.around(right_down).astype(np.int32)
+    right_up = np.around(right_up).astype(np.int32)
     left_up = list(left_up)
     left_down = list(left_down)
     right_up = list(right_up)
@@ -64,7 +64,7 @@ def generate_future_waypoints(measurements, pixels_per_meter=5, max_distance=18)
             break
         new_loc = new_loc * pixels_per_meter + pixels_per_meter * max_distance
         new_loc = np.around(new_loc)
-        new_loc = tuple(new_loc.astype(np.int))
+        new_loc = tuple(new_loc.astype(np.int32))
         img = cv2.circle(img, new_loc, 3, 255, -1)
     img = np.clip(img, 0, 255)
     img = img.astype(np.uint8)
@@ -72,8 +72,34 @@ def generate_future_waypoints(measurements, pixels_per_meter=5, max_distance=18)
 
 
 def generate_heatmap(measurements, actors_data, pixels_per_meter=5, max_distance=18):
+    # Convert new format (list) to old format (dict) if needed
+    if isinstance(actors_data, list):
+        actors_dict = {}
+        for actor in actors_data:
+            actor_id = str(actor['id'])
+            # Map new format fields to old format
+            actor_dict = {
+                'loc': [actor['x'], actor['y'], actor.get('z', 0)],
+                'ori': [np.cos(np.radians(actor.get('yaw', 0))), 
+                        np.sin(np.radians(actor.get('yaw', 0))), 
+                        0],
+                'box': [actor.get('extent_x', 1.0), actor.get('extent_y', 1.0), actor.get('extent_z', 1.0)],
+                'tpe': 0 if actor['type'] == 'vehicle' else (1 if actor['type'] == 'pedestrian' else 2),  # 0=vehicle, 1=pedestrian, 2=traffic_light
+            }
+            
+            # Add traffic light specific fields
+            if actor['type'] == 'traffic_light':
+                # Convert state string to sta integer: 0=Red, 1=Green/Yellow/etc
+                actor_dict['sta'] = 0 if actor.get('state') == 'Red' else 1
+                # Set default values for trigger location and box (not available in new format)
+                actor_dict['taigger_loc'] = [0, 0, 0]
+                actor_dict['trigger_box'] = [2.0, 2.0, 2.0]  # Default trigger box size
+            
+            actors_dict[actor_id] = actor_dict
+        actors_data = actors_dict
+    
     img_size = max_distance * pixels_per_meter * 2
-    img = np.zeros((img_size, img_size, 3), np.int)
+    img = np.zeros((img_size, img_size, 3), dtype=np.int32)
     ego_x = measurements["x"]
     ego_y = measurements["y"]
     ego_theta = measurements["theta"]

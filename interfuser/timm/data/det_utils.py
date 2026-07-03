@@ -21,6 +21,23 @@ def convert_grid_to_xy(i, j):
 def generate_det_data(
     heatmap, measurements, actors_data, pixels_per_meter=5, max_distance=18
 ):
+    # Convert new format (list) to old format (dict) if needed
+    if isinstance(actors_data, list):
+        actors_dict = {}
+        for actor in actors_data:
+            actor_id = str(actor['id'])
+            # Map new format fields to old format
+            actors_dict[actor_id] = {
+                'loc': [actor['x'], actor['y'], actor.get('z', 0)],
+                'ori': [np.cos(np.radians(actor.get('yaw', 0))), 
+                        np.sin(np.radians(actor.get('yaw', 0))), 
+                        0],
+                'box': [actor.get('extent_x', 1.0), actor.get('extent_y', 1.0), actor.get('extent_z', 1.0)],
+                'vel': [actor.get('velocity_x', 0), actor.get('velocity_y', 0), actor.get('velocity_z', 0)],
+                'tpe': 0 if actor['type'] == 'vehicle' else (1 if actor['type'] == 'pedestrian' else 2),
+            }
+        actors_data = actors_dict
+    
     traffic_heatmap = block_reduce(heatmap, block_size=(5, 5), func=np.mean)
     traffic_heatmap = np.clip(traffic_heatmap, 0.0, 255.0)
     traffic_heatmap = traffic_heatmap[:20, 8:28]

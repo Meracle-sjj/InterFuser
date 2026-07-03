@@ -220,7 +220,7 @@ class StatisticsManager(object):
                     else:
                         global_record.infractions[key] += len(route_record.infractions[key]) / route_length_kms
 
-                if route_record.status is not 'Completed':
+                if route_record.status != 'Completed':
                     global_record.status = 'Failed'
                     if 'exceptions' not in global_record.meta:
                         global_record.meta['exceptions'] = []
@@ -319,7 +319,7 @@ class StatisticsManager(object):
         if not data:
             data = create_default_json_msg()
 
-        if not data['sensors']:
+        if not data.get('sensors'):
             data['sensors'] = sensors
 
             save_dict(endpoint, data)

@@ -1,0 +1,10 @@
+===== ATTEMPT 1 =====
+carla up, launching eval...
+  segfaulted, will retry
+attempt 1 did not drive cleanly; restarting carla
+===== ATTEMPT 2 =====
+/data/shijj/interfuser_origin/results/run_until_ok.sh: line 11: 2968472 Killed                  setsid bash -c "./CarlaUE4.sh --world-port=$PORT -graphicsadapter=$GPU -quality-level=Low -RenderOffScreen" > "$ROOT/results/carla_retry.log" 2>&1  (wd: ~/interfuser_origin/carla)
+carla up, launching eval...
+  rows=16 early_speed=0.0
+  rows=31 early_speed=0.0
+DRIVING OK (attempt 2)

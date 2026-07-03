@@ -127,7 +127,11 @@ class BaseAgent(autonomous_agent.AutonomousAgent):
         self._sensors = self.sensor_interface._sensors_objects
 
     def _get_position(self, tick_data):
-        gps = tick_data["gps"]
+        gps = tick_data["gps"]  # [latitude, longitude]
+        # CARLA GNSS outputs GPS that needs same conversion as planner routes
+        # Both use: [lon, lat] → [x, y] with scale but NO negation
+        # (The negation in planner.set_route is for leaderboard GPS, not CARLA GNSS)
+        gps = np.array([gps[1], gps[0]])
         gps = (gps - self._command_planner.mean) * self._command_planner.scale
 
         return gps

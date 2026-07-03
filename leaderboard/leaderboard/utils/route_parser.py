@@ -21,13 +21,14 @@ TRIGGER_ANGLE_THRESHOLD = 10  # Threshold to say if two angles can be considerin
 
 # for loading predefined weathers while parsing routes
 WEATHERS = {
+        '0': carla.WeatherParameters.ClearNoon,  # 白天晴天
         '1': carla.WeatherParameters.ClearNoon,
         '2': carla.WeatherParameters.ClearSunset,
         '3': carla.WeatherParameters.CloudyNoon,
         '4': carla.WeatherParameters.CloudySunset,
         '5': carla.WeatherParameters.WetNoon,
         '6': carla.WeatherParameters.WetSunset,
-        '7': carla.WeatherParameters.MidRainyNoon,
+        '7': carla.WeatherParameters.MidRainyNoon,  # 白天中雨
         '8': carla.WeatherParameters.MidRainSunset,
         '9': carla.WeatherParameters.WetCloudyNoon,
         '10': carla.WeatherParameters.WetCloudySunset,
@@ -35,6 +36,14 @@ WEATHERS = {
         '12': carla.WeatherParameters.HardRainSunset,
         '13': carla.WeatherParameters.SoftRainNoon,
         '14': carla.WeatherParameters.SoftRainSunset,
+        # 添加夜间天气支持
+        '15': carla.WeatherParameters(5.0, 0.0, 0.0, 10.0, -1.0, -90.0, 60.0, 75.0, 1.0, 0.0),  # ClearNight 黑夜晴天
+        '16': carla.WeatherParameters(60.0, 0.0, 0.0, 10.0, -1.0, -90.0, 60.0, 0.75, 0.1, 0.0),  # CloudyNight
+        '17': carla.WeatherParameters(5.0, 0.0, 50.0, 10.0, -1.0, -90.0, 60.0, 75.0, 1.0, 60.0),  # WetNight
+        '18': carla.WeatherParameters(60.0, 0.0, 50.0, 10.0, -1.0, -90.0, 60.0, 0.75, 0.1, 60.0),  # WetCloudyNight
+        '19': carla.WeatherParameters(60.0, 30.0, 50.0, 30.0, -1.0, -90.0, 60.0, 0.75, 0.1, 60.0),  # SoftRainNight
+        '20': carla.WeatherParameters(80.0, 60.0, 60.0, 60.0, -1.0, -90.0, 60.0, 0.75, 0.1, 80.0),  # MidRainyNight 黑夜中雨
+        '21': carla.WeatherParameters(100.0, 100.0, 90.0, 100.0, -1.0, -90.0, 100.0, 0.75, 0.1, 100.0),  # HardRainNight
 }
 
 
@@ -106,8 +115,15 @@ class RouteParser(object):
         route_weather = route.find("weather")
 
         if route_weather is None:
-
-            weather = carla.WeatherParameters(sun_altitude_angle=70, cloudiness=30)
+            # Check for environment variable override
+            import os
+            weather_id = os.environ.get('WEATHER_ID', None)
+            
+            if weather_id and weather_id in WEATHERS:
+                print(f"[RouteParser] Using weather from WEATHER_ID environment variable: {weather_id}")
+                weather = WEATHERS[weather_id]
+            else:
+                weather = carla.WeatherParameters(sun_altitude_angle=70, cloudiness=30)
 
         else:
             weather = carla.WeatherParameters()

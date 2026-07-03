@@ -1,0 +1,152 @@
+==== interfuser_origin eval ====
+model : /home/shijj/interfuser/leaderboard/team_code/model_20260121.tar
+gpu   : CUDA_VISIBLE_DEVICES=0
+route : leaderboard/data/training_routes/routes_town01_tiny3.xml
+save  : data/eval_origin
+================================
+/data/shijj/interfuser_origin/leaderboard/leaderboard/leaderboard_evaluator.py:24: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+/data/shijj/interfuser_origin/leaderboard/leaderboard/leaderboard_evaluator.py:91: DeprecationWarning: distutils Version classes are deprecated. Use packaging.version instead.
+  if LooseVersion(dist.version) < LooseVersion('0.9.10'):
+pygame 2.6.1 (SDL 2.28.4, Python 3.10.19)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+
+[1m========= Preparing RouteScenario_0 (repetition 0) =========
+> Setting up the agent[0m
+load model: /home/shijj/interfuser/leaderboard/team_code/model_20260121.tar
+routes_town01_tiny3_06_29_11_43_03
+[1m> Loading the world[0m
+WARNING: Actor model vehicle.lincoln.mkz2017 not available. Using instead vehicle.tesla.model3
+[1m> Running the route[0m
+[DEBUG] Waypoint 0: lat=-0.00062845, lon=-0.00001844
+[DEBUG] After [lon, -lat]: [-1.84434213e-05  6.28454442e-04]
+[DEBUG] After scale: [-2.05, 69.96]
+[DEBUG] Waypoint 1: lat=-0.00108661, lon=-0.00001835
+[DEBUG] After [lon, -lat]: [-1.83498975e-05  1.08661148e-03]
+[DEBUG] After scale: [-2.04, 120.97]
+[DEBUG] Waypoint 2: lat=-0.00155374, lon=-0.00001811
+[DEBUG] After [lon, -lat]: [-1.81059221e-05  1.55373536e-03]
+[DEBUG] After scale: [-2.02, 172.97]
+[1m> Stopping the route[0m
+
+[1m========= Results of RouteScenario_0 (repetition 0) ------ [91mFAILURE[0m [1m=========[0m
+
+╒═════════════════════════════════╤═════════════════════╕
+│ Start Time                      │ 2026-06-29 11:43:08 │
+├─────────────────────────────────┼─────────────────────┤
+│ End Time                        │ 2026-06-29 12:11:44 │
+├─────────────────────────────────┼─────────────────────┤
+│ Duration (System Time)          │ 1716.63s            │
+├─────────────────────────────────┼─────────────────────┤
+│ Duration (Game Time)            │ 295.75s             │
+├─────────────────────────────────┼─────────────────────┤
+│ Ratio (System Time / Game Time) │ 0.172               │
+╘═════════════════════════════════╧═════════════════════╛
+
+╒═══════════════════════╤═════════╤═════════╕
+│ Criterion             │ Result  │ Value   │
+├───────────────────────┼─────────┼─────────┤
+│ RouteCompletionTest   │ [91mFAILURE[0m │ 49.59 % │
+├───────────────────────┼─────────┼─────────┤
+│ OutsideRouteLanesTest │ [92mSUCCESS[0m │ 0 %     │
+├───────────────────────┼─────────┼─────────┤
+│ CollisionTest         │ [91mFAILURE[0m │ 1 times │
+├───────────────────────┼─────────┼─────────┤
+│ RunningRedLightTest   │ [92mSUCCESS[0m │ 0 times │
+├───────────────────────┼─────────┼─────────┤
+│ RunningStopTest       │ [92mSUCCESS[0m │ 0 times │
+├───────────────────────┼─────────┼─────────┤
+│ InRouteTest           │ [92mSUCCESS[0m │         │
+├───────────────────────┼─────────┼─────────┤
+│ AgentBlockedTest      │ [91mFAILURE[0m │         │
+├───────────────────────┼─────────┼─────────┤
+│ Timeout               │ [92mSUCCESS[0m │         │
+╘═══════════════════════╧═════════╧═════════╛
+
+[1m> Registering the route statistics[0m
+ERROR: failed to destroy actor 199 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 201 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 205 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 215 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 225 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 245 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 259 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 265 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 268 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 277 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 284 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 287 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 290 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 296 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 300 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 304 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 307 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 308 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 313 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 316 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 317 : unable to destroy actor: not found 
+
+[1m========= Preparing RouteScenario_1 (repetition 0) =========
+> Setting up the agent[0m
+load model: /home/shijj/interfuser/leaderboard/team_code/model_20260121.tar
+routes_town01_tiny3_06_29_12_11_46
+[1m> Loading the world[0m
+WARNING: Actor model vehicle.lincoln.mkz2017 not available. Using instead vehicle.tesla.model3
+[1m> Running the route[0m
+[DEBUG] Waypoint 0: lat=-0.00129322, lon=-0.00001824
+[DEBUG] After [lon, -lat]: [-1.82419854e-05  1.29322393e-03]
+[DEBUG] After scale: [-2.03, 143.97]
+[DEBUG] Waypoint 1: lat=-0.00176035, lon=-0.00001800
+[DEBUG] After [lon, -lat]: [-1.79980079e-05  1.76034774e-03]
+[DEBUG] After scale: [-2.00, 195.97]
+[DEBUG] Waypoint 2: lat=-0.00222746, lon=-0.00001779
+[DEBUG] After [lon, -lat]: [-1.77947943e-05  2.22745990e-03]
+[DEBUG] After scale: [-1.98, 247.97]
+[1m> Stopping the route[0m
+
+[1m========= Results of RouteScenario_1 (repetition 0) ------ [91mFAILURE[0m [1m=========[0m
+
+╒═════════════════════════════════╤═════════════════════╕
+│ Start Time                      │ 2026-06-29 12:11:51 │
+├─────────────────────────────────┼─────────────────────┤
+│ End Time                        │ 2026-06-29 12:46:02 │
+├─────────────────────────────────┼─────────────────────┤
+│ Duration (System Time)          │ 2051.44s            │
+├─────────────────────────────────┼─────────────────────┤
+│ Duration (Game Time)            │ 319.05s             │
+├─────────────────────────────────┼─────────────────────┤
+│ Ratio (System Time / Game Time) │ 0.156               │
+╘═════════════════════════════════╧═════════════════════╛
+
+╒═══════════════════════╤═════════╤═════════╕
+│ Criterion             │ Result  │ Value   │
+├───────────────────────┼─────────┼─────────┤
+│ RouteCompletionTest   │ [91mFAILURE[0m │ 73.02 % │
+├───────────────────────┼─────────┼─────────┤
+│ OutsideRouteLanesTest │ [91mFAILURE[0m │ 5.58 %  │
+├───────────────────────┼─────────┼─────────┤
+│ CollisionTest         │ [92mSUCCESS[0m │ 0 times │
+├───────────────────────┼─────────┼─────────┤
+│ RunningRedLightTest   │ [92mSUCCESS[0m │ 0 times │
+├───────────────────────┼─────────┼─────────┤
+│ RunningStopTest       │ [92mSUCCESS[0m │ 0 times │
+├───────────────────────┼─────────┼─────────┤
+│ InRouteTest           │ [92mSUCCESS[0m │         │
+├───────────────────────┼─────────┼─────────┤
+│ AgentBlockedTest      │ [92mSUCCESS[0m │         │
+├───────────────────────┼─────────┼─────────┤
+│ Timeout               │ [91mFAILURE[0m │         │
+╘═══════════════════════╧═════════╧═════════╛
+
+[1m> Registering the route statistics[0m
+ERROR: failed to destroy actor 566 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 588 : unable to destroy actor: not found 
+
+[1m========= Preparing RouteScenario_2 (repetition 0) =========
+> Setting up the agent[0m
+load model: /home/shijj/interfuser/leaderboard/team_code/model_20260121.tar
+routes_town01_tiny3_06_29_12_46_04
+[1m> Loading the world[0m
+terminate called after throwing an instance of 'carla::client::TimeoutException'
+  what():  time-out of 600000ms while waiting for the simulator, make sure the simulator is ready and connected to localhost:2155
+leaderboard/scripts/run_origin_eval.sh: line 74: 2872221 Aborted                 (core dumped) python3 ${LEADERBOARD_ROOT}/leaderboard/leaderboard_evaluator.py --scenarios=${SCENARIOS} --routes=${ROUTES} --repetitions=${REPETITIONS} --track=${CHALLENGE_TRACK_CODENAME} --checkpoint=${CHECKPOINT_ENDPOINT} --agent=${TEAM_AGENT} --agent-config=${TEAM_CONFIG} --debug=${DEBUG_CHALLENGE} --record=${RECORD_PATH} --resume=${RESUME} --port=${PORT} --trafficManagerPort=${TM_PORT}

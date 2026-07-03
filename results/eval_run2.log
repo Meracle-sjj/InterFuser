@@ -1,0 +1,30 @@
+==== interfuser_origin eval ====
+model : /home/shijj/interfuser/leaderboard/team_code/model_20260121.tar
+gpu   : CUDA_VISIBLE_DEVICES=2
+route : leaderboard/data/training_routes/routes_town01_tiny3.xml
+save  : data/eval_origin
+================================
+/data/shijj/interfuser_origin/leaderboard/leaderboard/leaderboard_evaluator.py:24: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+/data/shijj/interfuser_origin/leaderboard/leaderboard/leaderboard_evaluator.py:91: DeprecationWarning: distutils Version classes are deprecated. Use packaging.version instead.
+  if LooseVersion(dist.version) < LooseVersion('0.9.10'):
+pygame 2.6.1 (SDL 2.28.4, Python 3.10.19)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+
+[1m========= Preparing RouteScenario_0 (repetition 0) =========
+> Setting up the agent[0m
+load model: /home/shijj/interfuser/leaderboard/team_code/model_20260121.tar
+routes_town01_tiny3_06_29_10_42_51
+[1m> Loading the world[0m
+WARNING: Actor model vehicle.lincoln.mkz2017 not available. Using instead vehicle.tesla.model3
+[1m> Running the route[0m
+[DEBUG] Waypoint 0: lat=-0.00062845, lon=-0.00001844
+[DEBUG] After [lon, -lat]: [-1.84434213e-05  6.28454442e-04]
+[DEBUG] After scale: [-2.05, 69.96]
+[DEBUG] Waypoint 1: lat=-0.00108661, lon=-0.00001835
+[DEBUG] After [lon, -lat]: [-1.83498975e-05  1.08661148e-03]
+[DEBUG] After scale: [-2.04, 120.97]
+[DEBUG] Waypoint 2: lat=-0.00155374, lon=-0.00001811
+[DEBUG] After [lon, -lat]: [-1.81059221e-05  1.55373536e-03]
+[DEBUG] After scale: [-2.02, 172.97]
+leaderboard/scripts/run_origin_eval.sh: line 74: 2804602 Killed                  python3 ${LEADERBOARD_ROOT}/leaderboard/leaderboard_evaluator.py --scenarios=${SCENARIOS} --routes=${ROUTES} --repetitions=${REPETITIONS} --track=${CHALLENGE_TRACK_CODENAME} --checkpoint=${CHECKPOINT_ENDPOINT} --agent=${TEAM_AGENT} --agent-config=${TEAM_CONFIG} --debug=${DEBUG_CHALLENGE} --record=${RECORD_PATH} --resume=${RESUME} --port=${PORT} --trafficManagerPort=${TM_PORT}

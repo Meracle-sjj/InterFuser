@@ -14,10 +14,10 @@ def add_rect(img, loc, ori, box, value, pixels_per_meter, max_distance, color):
     left_down = (loc + hor_offset - vet_offset + max_distance) * pixels_per_meter
     right_up = (loc - hor_offset + vet_offset + max_distance) * pixels_per_meter
     right_down = (loc - hor_offset - vet_offset + max_distance) * pixels_per_meter
-    left_up = np.around(left_up).astype(np.int)
-    left_down = np.around(left_down).astype(np.int)
-    right_down = np.around(right_down).astype(np.int)
-    right_up = np.around(right_up).astype(np.int)
+    left_up = np.around(left_up).astype(np.int32)
+    left_down = np.around(left_down).astype(np.int32)
+    right_down = np.around(right_down).astype(np.int32)
+    right_up = np.around(right_up).astype(np.int32)
     left_up = list(left_up)
     left_down = list(left_down)
     right_up = list(right_up)
@@ -36,7 +36,10 @@ def convert_grid_to_xy(i, j):
 def find_peak_box(data):
     det_data = np.zeros((22, 22, 7))
     det_data[1:21, 1:21] = data
-    det_data[19:21, 1:21, 0] -= 0.1
+    # Filter ego vehicle area to avoid self-detection
+    # Original: det_data[19:21, 1:21, 0] -= 0.1
+    # Improved: Suppress probability for rows 16-20 (covering approx 4m from rear to front axel area)
+    det_data[16:21, 1:21, 0] = 0.0
     res = []
     for i in range(1, 21):
         for j in range(1, 21):
@@ -126,7 +129,7 @@ def render_waypoints(waypoints, pixels_per_meter=5, max_distance=18, color=(0, 2
         new_loc = waypoints[i]
         new_loc = new_loc * pixels_per_meter + pixels_per_meter * max_distance
         new_loc = np.around(new_loc)
-        new_loc = tuple(new_loc.astype(np.int))
+        new_loc = tuple(new_loc.astype(np.int32))
         img = cv2.circle(img, new_loc, 6, color, -1)
     img = np.clip(img, 0, 255)
     img = img.astype(np.uint8)

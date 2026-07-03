@@ -61,6 +61,18 @@ class ActorSpeedAboveThresholdTest(Criterion):
 
                     # record event
                     vehicle_location = CarlaDataProvider.get_location(self._actor)
+                    
+                    # Print prominent error message
+                    blocked_duration = GameTime.get_time() - self._time_last_valid_state
+                    print("\n" + "="*80)
+                    print("❌ 严重错误：车辆因塞车被强制终止！")
+                    print("="*80)
+                    print(f"阻塞时长: {blocked_duration:.1f} 秒 (超过最大允许时间 {self._below_threshold_max_time:.1f} 秒)")
+                    print(f"车辆速度: {linear_speed:.3f} m/s (低于阈值 {self._speed_threshold} m/s)")
+                    print(f"阻塞位置: x={vehicle_location.x:.2f}, y={vehicle_location.y:.2f}, z={vehicle_location.z:.2f}")
+                    print(f"游戏时间: {GameTime.get_time():.2f} 秒")
+                    print("="*80 + "\n")
+                    
                     blocked_event = TrafficEvent(event_type=TrafficEventType.VEHICLE_BLOCKED)
                     ActorSpeedAboveThresholdTest._set_event_message(blocked_event, vehicle_location)
                     ActorSpeedAboveThresholdTest._set_event_dict(blocked_event, vehicle_location)

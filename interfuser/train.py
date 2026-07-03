@@ -14,6 +14,19 @@ NVIDIA CUDA specific speedups adopted from NVIDIA Apex examples
 
 Hacked together by / Copyright 2020 Ross Wightman (https://github.com/rwightman)
 """
+# Fix NumPy 2.0 compatibility with older imgaug library
+import numpy as np
+if not hasattr(np, 'sctypes'):
+    # NumPy 2.0+ removed np.sctypes, so we recreate it for compatibility
+    np.sctypes = {
+        'float': [np.float16, np.float32, np.float64],
+        'int': [np.int8, np.int16, np.int32, np.int64],
+        'uint': [np.uint8, np.uint16, np.uint32, np.uint64],
+        'complex': [np.complex64, np.complex128],
+        'bool': [np.bool_],
+        'object': [np.object_],
+    }
+
 import argparse
 import time
 import yaml
@@ -751,7 +764,7 @@ parser.add_argument(
     metavar="N",
     help="Test/inference time augmentation (oversampling) factor. 0=None (default: 0)",
 )
-parser.add_argument("--local_rank", default=0, type=int)
+parser.add_argument("--local-rank", dest="local_rank", default=0, type=int)
 parser.add_argument(
     "--use-multi-epochs-loader",
     action="store_true",
@@ -811,11 +824,11 @@ class MVTL1Loss:
         target_prob_0 = torch.masked_select(target[:, :, 0], target_0_mask)
         output_prob_0 = torch.masked_select(output[:, :, 0], target_0_mask)
         if target_prob_1.numel() == 0:
-            loss_prob_1 = 0
+            loss_prob_1 = torch.tensor(0.0, device=output.device, dtype=output.dtype)
         else:
             loss_prob_1 = self.loss(output_prob_1, target_prob_1)
         if target_prob_0.numel() == 0:
-            loss_prob_0 = 0
+            loss_prob_0 = torch.tensor(0.0, device=output.device, dtype=output.dtype)
         else:
             loss_prob_0 = self.loss(output_prob_0, target_prob_0)
         loss_1 = 0.5 * loss_prob_0 + 0.5 * loss_prob_1
@@ -823,7 +836,7 @@ class MVTL1Loss:
         output_1 = output[target_1_mask][:][:, 1:6]
         target_1 = target[target_1_mask][:][:, 1:6]
         if target_1.numel() == 0:
-            loss_2 = 0
+            loss_2 = torch.tensor(0.0, device=output.device, dtype=output.dtype)
         else:
             loss_2 = self.loss(target_1, output_1)
 
@@ -831,7 +844,7 @@ class MVTL1Loss:
         output_2 = output[target_1_mask][:][:, 6]
         target_2 = target[target_1_mask][:][:, 6]
         if target_2.numel() == 0:
-            loss_3 = 0
+            loss_3 = torch.tensor(0.0, device=output.device, dtype=output.dtype)
         else:
             loss_3 = self.loss(target_2, output_2)
         return 0.5 * loss_1 * self.weight + 0.5 * loss_2, loss_3
@@ -968,7 +981,7 @@ def main():
         model = torch.jit.script(model)
 
     linear_scaled_lr = (
-        args.lr * args.batch_size * torch.distributed.get_world_size() / 512.0
+        args.lr * args.batch_size * args.world_size / 512.0
     )
     args.lr = linear_scaled_lr
     if args.with_backbone_lr:
@@ -979,7 +992,7 @@ def main():
         backbone_linear_scaled_lr = (
             args.backbone_lr
             * args.batch_size
-            * torch.distributed.get_world_size()
+            * args.world_size
             / 512.0
         )
         backbone_weights = []
@@ -1713,7 +1726,14 @@ def validate(
             )
             losses_stop_sign.update(reduced_loss_stop_sign.item(), batch_size)
 
-            l1_errorm.update(reduced_loss.item(), batch_size)
+            # Calculate L1 error for waypoint prediction
+            waypoint_l1_error = torch.mean(torch.abs(output[1] - target[1]))
+            if args.distributed:
+                reduced_waypoint_l1_error = reduce_tensor(waypoint_l1_error.data, args.world_size)
+            else:
+                reduced_waypoint_l1_error = waypoint_l1_error.data
+            
+            l1_errorm.update(reduced_waypoint_l1_error.item(), batch_size)
             junction_errorm.update(reduced_junction_error.item(), batch_size)
             traffic_light_state_errorm.update(
                 reduced_traffic_light_state_error.item(), batch_size

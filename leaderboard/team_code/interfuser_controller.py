@@ -52,8 +52,17 @@ def collision_detections(map1, map2, threshold=0.04):
     """
     assert map1.shape == map2.shape
     overlap_map = (map1 > 0.01) & (map2 > 0.01)
-    ratio = float(np.sum(overlap_map)) / np.sum(map2 > 0)
-    ratio2 = float(np.sum(overlap_map)) / np.sum(map1 > 0)
+    
+    # 避免除以零的警告
+    sum_map2 = np.sum(map2 > 0)
+    sum_map1 = np.sum(map1 > 0)
+    
+    if sum_map2 == 0 or sum_map1 == 0:
+        return True  # 如果任一地图为空，认为没有碰撞
+    
+    ratio = float(np.sum(overlap_map)) / sum_map2
+    ratio2 = float(np.sum(overlap_map)) / sum_map1
+    
     if ratio < threshold:
         return True
     else:
@@ -153,7 +162,7 @@ class InterfuserController(object):
 
         aim = (waypoints[1] + waypoints[0]) / 2.0
         aim[1] *= -1
-        angle = np.degrees(np.pi / 2 - np.arctan2(aim[1], aim[0])) / 90
+        angle = -np.degrees(np.pi / 2 - np.arctan2(aim[1], aim[0])) / 90
         if speed < 0.01:
             angle = 0
         steer = self.turn_controller.step(angle)
@@ -225,7 +234,7 @@ class InterfuserController(object):
                     2 * d_1 - 0.5 * speed - max(0, speed - 2.5),
                 ),
             )
-            if junction > 0.0 and traffic_light_state > 0.3:
+            if junction > 0.5 and traffic_light_state > 0.3:
                 brake = True
                 desired_speed = 0.0
         desired_speed = desired_speed if brake is False else 0.0
@@ -270,4 +279,17 @@ class InterfuserController(object):
             throttle = 0
             brake = True
 
-        return steer, throttle, brake, (meta_info_1, meta_info_2, meta_info_3, safe_dis)
+        debug_info = {
+            "angle": float(angle),
+            "desired_speed": float(desired_speed),
+            "safe_dis": float(safe_dis),
+            "d_0": float(d_0),
+            "d_05": float(d_05),
+            "d_1": float(d_1),
+            "aim_x": float(aim[0]),
+            "aim_y": float(aim[1]),
+            "stop_steps": int(self.stop_steps),
+            "in_stop_sign_effect": bool(self.in_stop_sign_effect),
+        }
+
+        return steer, throttle, brake, (meta_info_1, meta_info_2, meta_info_3, safe_dis, debug_info)

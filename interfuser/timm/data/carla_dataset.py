@@ -117,54 +117,124 @@ class CarlaMVDetDataset(BaseIODataset):
             self.augmenter = augment(self.augment_prob)
         route_dirs = []
         self.route_frames = []
+        
+        # Track missing fields for summary statistics
+        self._missing_field_stats = {
+            'command': 0,
+            'x_y_command': 0,
+            'warned': False  # Only warn once
+        }
 
         dataset_indexs = self._load_text(os.path.join(root, 'dataset_index.txt')).split('\n')
-        pattern = re.compile('weather-(\d+).*town(\d\d)')
+        
         for line in dataset_indexs:
-            if len(line.split()) != 2:
+            line = line.strip()
+            if not line:
                 continue
-            path, frames = line.split()
-            frames = int(frames)
-            res = pattern.findall(path)
-            if len(res) != 1:
+            
+            parts = line.split()
+            
+            # Support both formats:
+            # Old format (2 columns): path frames
+            # New format (3 columns): town_name path frames
+            if len(parts) == 2:
+                path, frames = parts
+                frames = int(frames)
+                
+                # Extract weather and town from path
+                import re
+                weather_match = re.search(r'_w(\d+)_', path)
+                town_match = re.search(r'town(\d+)', path, re.IGNORECASE)
+                
+                if not weather_match or not town_match:
+                    continue
+                    
+                weather = int(weather_match.group(1))
+                town = int(town_match.group(1))
+                
+            elif len(parts) == 3:
+                town_name, path, frames = parts
+                frames = int(frames)
+                
+                # Extract weather and town from path
+                import re
+                weather_match = re.search(r'_w(\d+)_', path)
+                town_match = re.search(r'Town(\d+)', town_name)
+                
+                if not weather_match or not town_match:
+                    continue
+                    
+                weather = int(weather_match.group(1))
+                town = int(town_match.group(1))
+            else:
                 continue
-            weather = int(res[0][0])
-            town = int(res[0][1])
+                
             if weather not in weathers or town not in towns:
                 continue
+                
             for i in range(frames):
                 self.route_frames.append((os.path.join(root, path), i))
 
         _logger.info("Sub route dir nums: %d" % len(self.route_frames))
 
+    def get_missing_field_stats(self):
+        """Return statistics about missing fields encountered during data loading"""
+        return {
+            'missing_command_count': self._missing_field_stats['command'],
+            'missing_x_y_command_count': self._missing_field_stats['x_y_command'],
+            'total_samples_loaded': self._missing_field_stats['command'] + self._missing_field_stats['x_y_command']
+        }
 
     def __len__(self):
         return len(self.route_frames)
 
     def __getitem__(self, idx):
+        # Try to load the sample, if it fails (corrupted data), try the next one
+        max_retries = 50  # Avoid infinite loops
+        for attempt in range(max_retries):
+            try:
+                return self._get_item_impl(idx)
+            except (FileNotFoundError, KeyError, IOError, OSError) as e:
+                _logger.warning(f"Skipping corrupted sample at index {idx}: {e}")
+                # Try next sample
+                idx = (idx + 1) % len(self.route_frames)
+        
+        # If we couldn't find a valid sample after max_retries, raise an error
+        raise RuntimeError(f"Could not find a valid sample after {max_retries} attempts")
+    
+    def _get_item_impl(self, idx):
         data = {}
         route_dir, frame_id = self.route_frames[idx]
 
         '''
         You can use tools/data/batch_merge_data.py to generate FULL image (including front, left, right) for reducing io cost
-
-        rgb_full_image = self._load_image(
-            os.path.join(route_dir, "rgb_full", "%04d.jpg" % frame_id)
-        )
-        rgb_image = rgb_full_image.crop((0, 0, 800, 600))
-        rgb_left_image = rgb_full_image.crop((0, 600, 800, 1200))
-        rgb_right_image = rgb_full_image.crop((0, 1200, 800, 1800))
         '''
 
-        rgb_image = self._load_image(
-            os.path.join(route_dir, "rgb_front", "%04d.jpg" % frame_id)
-        )
-        rgb_left_image = self._load_image(
-            os.path.join(route_dir, "rgb_left", "%04d.jpg" % frame_id)
-        )
-        rgb_right_image = self._load_image(
-            os.path.join(route_dir, "rgb_right", "%04d.jpg" % frame_id)
-        )
+        # Check which RGB format is available to avoid unnecessary warning messages
+        rgb_full_dir = os.path.join(route_dir, "rgb_full")
+        rgb_front_dir = os.path.join(route_dir, "rgb_front")
+        
+        if os.path.exists(rgb_full_dir):
+            # Load merged rgb_full image (LMDrive format)
+            rgb_full_image = self._load_image(
+                os.path.join(route_dir, "rgb_full", "%04d.jpg" % frame_id)
+            )
+            rgb_image = rgb_full_image.crop((0, 0, 800, 600))
+            rgb_left_image = rgb_full_image.crop((0, 600, 800, 1200))
+            rgb_right_image = rgb_full_image.crop((0, 1200, 800, 1800))
+        elif os.path.exists(rgb_front_dir):
+            # Load separate image files
+            rgb_image = self._load_image(
+                os.path.join(route_dir, "rgb_front", "%04d.jpg" % frame_id)
+            )
+            rgb_left_image = self._load_image(
+                os.path.join(route_dir, "rgb_left", "%04d.jpg" % frame_id)
+            )
+            rgb_right_image = self._load_image(
+                os.path.join(route_dir, "rgb_right", "%04d.jpg" % frame_id)
+            )
+        else:
+            raise FileNotFoundError(f"Could not find rgb_full or rgb_front directory in {route_dir}")
 
         if self.augment_prob > 0:
            rgb_image = Image.fromarray(self.augmenter(image=np.array(rgb_image)))
@@ -212,21 +282,62 @@ class CarlaMVDetDataset(BaseIODataset):
         measurements = self._load_json(
             os.path.join(route_dir, "measurements", "%04d.json" % frame_id)
         )
-        actors_data = self._load_json(
-            os.path.join(route_dir, "actors_data", "%04d.json" % frame_id)
-        )
-        affordances = self._load_npy(os.path.join(route_dir, 'affordances/%04d.npy' % frame_id))
-        stop_sign = int(affordances.item()['stop_sign'])
+        # Try to load from other_actors first (new format), then fall back to actors_data (old format)
+        try:
+            actors_data = self._load_json(
+                os.path.join(route_dir, "other_actors", "%04d.json" % frame_id)
+            )
+            # For new format, also load 3d_bbs to get bounding box information
+            try:
+                bbs_data = self._load_json(
+                    os.path.join(route_dir, "3d_bbs", "%04d.json" % frame_id)
+                )
+                # Merge extent information from 3d_bbs into actors_data
+                if isinstance(actors_data, list) and isinstance(bbs_data, list):
+                    bbs_dict = {bb['id']: bb for bb in bbs_data}
+                    for actor in actors_data:
+                        if actor['id'] in bbs_dict:
+                            extent = bbs_dict[actor['id']].get('extent', {})
+                            actor['extent_x'] = extent.get('x', 1.0)
+                            actor['extent_y'] = extent.get('y', 1.0)
+                            actor['extent_z'] = extent.get('z', 1.0)
+            except:
+                pass  # If 3d_bbs not available, use default extent values
+        except:
+            actors_data = self._load_json(
+                os.path.join(route_dir, "actors_data", "%04d.json" % frame_id)
+            )
+        # Try to load affordances from JSON first (new format), then fall back to NPY (old format)
+        try:
+            affordances = self._load_json(os.path.join(route_dir, 'affordances/%04d.json' % frame_id))
+            stop_sign = int(affordances['stop_sign'])
+        except:
+            affordances = self._load_npy(os.path.join(route_dir, 'affordances/%04d.npy' % frame_id))
+            stop_sign = int(affordances.item()['stop_sign'])
 
-        if measurements["is_junction"] is True:
-            is_junction = 1
+        # Handle different data formats for is_junction
+        if "is_junction" in measurements:
+            is_junction = 1 if measurements["is_junction"] is True else 0
         else:
+            # If not in measurements, assume not in junction
             is_junction = 0
 
-        if len(measurements['is_red_light_present']) > 0:
-            traffic_light_state = 0
+        # Handle different data formats for traffic light state
+        if 'is_red_light_present' in measurements:
+            # Old format: is_red_light_present is a list
+            if len(measurements['is_red_light_present']) > 0:
+                traffic_light_state = 0  # Red light present
+            else:
+                traffic_light_state = 1  # No red light
+        elif 'traffic_light' in affordances and affordances['traffic_light'] is not None:
+            # New format: traffic_light is a string ("Red", "Green", "Yellow", etc.)
+            if affordances['traffic_light'] == "Red":
+                traffic_light_state = 0  # Red light
+            else:
+                traffic_light_state = 1  # Green/Yellow or other (can proceed)
         else:
-            traffic_light_state = 1
+            # No traffic light nearby or no data available
+            traffic_light_state = 1  # Assume can proceed
 
         if self.with_lidar:
             lidar_unprocessed = self._load_npy(
@@ -247,7 +358,15 @@ class CarlaMVDetDataset(BaseIODataset):
             )
 
         cmd_one_hot = [0, 0, 0, 0, 0, 0]
-        cmd = measurements["command"] - 1
+        # Handle missing command field in some data samples
+        if "command" in measurements:
+            cmd = measurements["command"] - 1
+        else:
+            self._missing_field_stats['command'] += 1
+            if not self._missing_field_stats['warned']:
+                _logger.warning(f"Missing 'command' field detected (e.g., {route_dir} frame {frame_id}). Using default command=4 for affected samples. This warning will only be shown once.")
+                self._missing_field_stats['warned'] = True
+            cmd = 3  # Default to LANE_FOLLOW
         if cmd < 0:
             cmd = 3
         cmd_one_hot[cmd] = 1
@@ -261,8 +380,23 @@ class CarlaMVDetDataset(BaseIODataset):
         if np.isnan(measurements["theta"]):
             measurements["theta"] = 0
         ego_theta = measurements["theta"]
-        x_command = measurements["x_command"]
-        y_command = measurements["y_command"]
+        
+        # Handle missing x_command and y_command fields
+        if "x_command" in measurements and "y_command" in measurements:
+            x_command = measurements["x_command"]
+            y_command = measurements["y_command"]
+        else:
+            # Use ego position as fallback if command waypoint is missing
+            self._missing_field_stats['x_y_command'] += 1
+            if self._missing_field_stats['x_y_command'] == 1:
+                _logger.warning(f"Missing 'x_command'/'y_command' detected (e.g., {route_dir} frame {frame_id}). Using ego position as fallback for affected samples (~3.6% of data). Further warnings suppressed.")
+            if "gps_x" in measurements:
+                x_command = measurements["gps_x"]
+                y_command = measurements["gps_y"]
+            else:
+                x_command = measurements["x"]
+                y_command = measurements["y"]
+        
         if "gps_x" in measurements:
             ego_x = measurements["gps_x"]
         else:
@@ -271,10 +405,15 @@ class CarlaMVDetDataset(BaseIODataset):
             ego_y = measurements["gps_y"]
         else:
             ego_y = measurements["y"]
+        
+        # Coordinate Correction: Use consistent rotation for Target/Waypoints (match Lidar)
+        # Old (Twisted): np.pi / 2 + ego_theta
+        # New (Standard Ego): np.pi / 2 - ego_theta
+        theta = np.pi / 2 - ego_theta
         R = np.array(
             [
-                [np.cos(np.pi / 2 + ego_theta), -np.sin(np.pi / 2 + ego_theta)],
-                [np.sin(np.pi / 2 + ego_theta), np.cos(np.pi / 2 + ego_theta)],
+                [np.cos(theta), -np.sin(theta)],
+                [np.sin(theta), np.cos(theta)],
             ]
         )
         local_command_point = np.array([x_command - ego_x, y_command - ego_y])

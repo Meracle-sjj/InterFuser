@@ -1,0 +1,83 @@
+==== interfuser_origin eval ====
+model : /home/shijj/interfuser/leaderboard/team_code/model_20260121.tar
+gpu   : CUDA_VISIBLE_DEVICES=0
+route : leaderboard/data/training_routes/routes_town01_tiny3.xml
+save  : data/eval_origin
+================================
+/data/shijj/interfuser_origin/leaderboard/leaderboard/leaderboard_evaluator.py:24: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+/data/shijj/interfuser_origin/leaderboard/leaderboard/leaderboard_evaluator.py:91: DeprecationWarning: distutils Version classes are deprecated. Use packaging.version instead.
+  if LooseVersion(dist.version) < LooseVersion('0.9.10'):
+pygame 2.6.1 (SDL 2.28.4, Python 3.10.19)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+
+[1m========= Preparing RouteScenario_2 (repetition 0) =========
+> Setting up the agent[0m
+load model: /home/shijj/interfuser/leaderboard/team_code/model_20260121.tar
+routes_town01_tiny3_06_29_15_18_53
+[1m> Loading the world[0m
+[TM] set_speed_diff unavailable: 'TrafficManager' object has no attribute 'set_global_percentage_speed_difference'
+WARNING: Actor model vehicle.lincoln.mkz2017 not available. Using instead vehicle.tesla.model3
+[TRAFFIC] Town01: requested 20 background vehicles, spawned 20
+[1m> Running the route[0m
+[DEBUG] Waypoint 0: lat=-0.00129322, lon=-0.00001824
+[DEBUG] After [lon, -lat]: [-1.82419854e-05  1.29322393e-03]
+[DEBUG] After scale: [-2.03, 143.97]
+[DEBUG] Waypoint 1: lat=-0.00176035, lon=-0.00001800
+[DEBUG] After [lon, -lat]: [-1.79980079e-05  1.76034774e-03]
+[DEBUG] After scale: [-2.00, 195.97]
+[DEBUG] Waypoint 2: lat=-0.00222746, lon=-0.00001779
+[DEBUG] After [lon, -lat]: [-1.77947943e-05  2.22745990e-03]
+[DEBUG] After scale: [-1.98, 247.97]
+[1m> Stopping the route[0m
+
+[1m========= Results of RouteScenario_2 (repetition 0) ------ [91mFAILURE[0m [1m=========[0m
+
+╒═════════════════════════════════╤═════════════════════╕
+│ Start Time                      │ 2026-06-29 15:18:58 │
+├─────────────────────────────────┼─────────────────────┤
+│ End Time                        │ 2026-06-29 15:35:13 │
+├─────────────────────────────────┼─────────────────────┤
+│ Duration (System Time)          │ 974.85s             │
+├─────────────────────────────────┼─────────────────────┤
+│ Duration (Game Time)            │ 223.15s             │
+├─────────────────────────────────┼─────────────────────┤
+│ Ratio (System Time / Game Time) │ 0.229               │
+╘═════════════════════════════════╧═════════════════════╛
+
+╒═══════════════════════╤═════════╤═════════╕
+│ Criterion             │ Result  │ Value   │
+├───────────────────────┼─────────┼─────────┤
+│ RouteCompletionTest   │ [91mFAILURE[0m │ 48.49 % │
+├───────────────────────┼─────────┼─────────┤
+│ OutsideRouteLanesTest │ [91mFAILURE[0m │ 6.91 %  │
+├───────────────────────┼─────────┼─────────┤
+│ CollisionTest         │ [91mFAILURE[0m │ 1 times │
+├───────────────────────┼─────────┼─────────┤
+│ RunningRedLightTest   │ [92mSUCCESS[0m │ 0 times │
+├───────────────────────┼─────────┼─────────┤
+│ RunningStopTest       │ [92mSUCCESS[0m │ 0 times │
+├───────────────────────┼─────────┼─────────┤
+│ InRouteTest           │ [92mSUCCESS[0m │         │
+├───────────────────────┼─────────┼─────────┤
+│ AgentBlockedTest      │ [91mFAILURE[0m │         │
+├───────────────────────┼─────────┼─────────┤
+│ Timeout               │ [92mSUCCESS[0m │         │
+╘═══════════════════════╧═════════╧═════════╛
+
+[1m> Registering the route statistics[0m
+WARNING: attempting to destroy an actor that is already dead: Actor 198 (vehicle.seat.leon) 
+ERROR: failed to destroy actor 199 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 200 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 201 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 202 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 203 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 204 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 205 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 206 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 207 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 211 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 214 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 215 : unable to destroy actor: not found 
+ERROR: failed to destroy actor 216 : unable to destroy actor: not found 
+[1m> Registering the global statistics[0m

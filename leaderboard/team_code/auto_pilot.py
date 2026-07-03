@@ -140,12 +140,16 @@ class AutoPilot(MapAgent):
             updated_route = self.disturb_waypoints(self._waypoint_planner.route)
             self._waypoint_planner.route = updated_route
 
-        self.birdview_producer = BirdViewProducer(
-            CarlaDataProvider.get_client(),  # carla.Client
-            target_size=PixelDimensions(width=400, height=400),
-            pixels_per_meter=4,
-            crop_type=BirdViewCropType.FRONT_AND_REAR_AREA,
-        )
+        # Only initialize BirdView if not in rgb_only mode
+        if not self.rgb_only:
+            self.birdview_producer = BirdViewProducer(
+                CarlaDataProvider.get_client(),  # carla.Client
+                target_size=PixelDimensions(width=400, height=400),
+                pixels_per_meter=4,
+                crop_type=BirdViewCropType.FRONT_AND_REAR_AREA,
+            )
+        else:
+            self.birdview_producer = None
 
     def disturb_waypoints(self, route):
         updated_route = deque()
@@ -177,10 +181,15 @@ class AutoPilot(MapAgent):
         return updated_route
 
     def _get_angle_to(self, pos, theta, target):
+        # CARLA coordinate system: theta=0 is North (+y), theta=π/2 is East (+x)
+        # Convert to standard math coordinates: theta=0 is East (+x), theta=π/2 is North (+y)
+        # Conversion: math_theta = π/2 - carla_theta
+        theta_math = np.pi / 2 - theta
+        
         R = np.array(
             [
-                [np.cos(theta), -np.sin(theta)],
-                [np.sin(theta), np.cos(theta)],
+                [np.cos(theta_math), -np.sin(theta_math)],
+                [np.sin(theta_math), np.cos(theta_math)],
             ]
         )
 
@@ -195,8 +204,20 @@ class AutoPilot(MapAgent):
         theta = tick_data["compass"]
         speed = tick_data["speed"]
 
+        # DEBUG: Print first few frames
+        if not hasattr(self, '_debug_count'):
+            self._debug_count = 0
+        if self._debug_count < 3:
+            print(f"[DEBUG _get_control] pos={pos}, theta={theta:.4f}, target={target}", flush=True)
+            print(f"[DEBUG _get_control] target-pos={target-pos}", flush=True)
+            self._debug_count += 1
+
         # Steering.
         angle_unnorm = self._get_angle_to(pos, theta, target)
+        
+        if self._debug_count <= 3:
+            print(f"[DEBUG _get_control] angle_unnorm={angle_unnorm:.2f}°", flush=True)
+        
         angle = angle_unnorm / 90
 
         steer = self._turn_controller.step(angle)
@@ -254,9 +275,14 @@ class AutoPilot(MapAgent):
         control.throttle = throttle
         control.brake = float(brake)
 
-        self.birdview = BirdViewProducer.as_rgb(
-            self.birdview_producer.produce(agent_vehicle=self._vehicle)
-        )
+        if self.birdview_producer is not None:
+            self.birdview = BirdViewProducer.as_rgb(
+                self.birdview_producer.produce(agent_vehicle=self._vehicle)
+            )
+        else:
+            # Create a dummy black image if birdview is disabled
+            self.birdview = np.zeros((400, 400, 3), dtype=np.uint8)
+            
         if self.step % self.save_skip_frames == 0 and self.save_path is not None:
             self.save(
                 near_node,

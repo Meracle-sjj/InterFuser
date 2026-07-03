@@ -42,21 +42,38 @@ class RoutePlanner(object):
         self.min_distance = min_distance
         self.max_distance = max_distance
 
-        # self.mean = np.array([49.0, 8.0]) # for carla 9.9
-        # self.scale = np.array([111324.60662786, 73032.1570362]) # for carla 9.9
-        self.mean = np.array([0.0, 0.0])  # for carla 9.10
-        self.scale = np.array([111324.60662786, 111319.490945])  # for carla 9.10
+        # For CARLA 0.9.16: GPS is in degrees, convert to meters
+        # Based on test data: raw GPS ~0.003 degrees needs to become ~330 meters
+        # This suggests we need the standard GPS-to-meters conversion
+        self.mean = np.array([0.0, 0.0])
+        self.scale = np.array([111324.60662786, 111324.60662786])  # meters per degree latitude/longitude
 
         self.debug = Plotter(debug_size)
 
     def set_route(self, global_plan, gps=False):
         self.route.clear()
 
-        for pos, cmd in global_plan:
+        for i, (pos, cmd) in enumerate(global_plan):
             if gps:
-                pos = np.array([pos["lat"], pos["lon"]])
-                pos -= self.mean
-                pos *= self.scale
+                # DEBUG: Print first 3 waypoints
+                if i < 3:
+                    print(f"[DEBUG] Waypoint {i}: lat={pos['lat']:.8f}, lon={pos['lon']:.8f}", flush=True)
+                
+                # CRITICAL: leaderboard's _location_to_gps() produces negative lat (my -= location.y)
+                # But CARLA GNSS outputs positive lat
+                # We MUST negate leaderboard lat to match CARLA GNSS coordinate system
+                pos_array = np.array([pos["lon"], -pos["lat"]])
+                
+                if i < 3:
+                    print(f"[DEBUG] After [lon, -lat]: {pos_array}", flush=True)
+                
+                pos_array -= self.mean
+                pos_array *= self.scale
+                
+                if i < 3:
+                    print(f"[DEBUG] After scale: [{pos_array[0]:.2f}, {pos_array[1]:.2f}]", flush=True)
+                
+                pos = pos_array
             else:
                 pos = np.array([pos.location.x, pos.location.y])
                 pos -= self.mean

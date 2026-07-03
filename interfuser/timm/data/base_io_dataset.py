@@ -22,10 +22,28 @@ class BaseIODataset(torch.utils.data.Dataset):
         try:
             img = Image.open(self.root_path + path)
         except Exception as e:
-            _logger.info(path)
-            n = path[-8:-4]
-            new_path = path[:-8] + "%04d.jpg" % (int(n) - 1)
-            img = Image.open(self.root_path + new_path)
+            # Try to load previous frames as fallback
+            _logger.warning(f"Image not found: {self.root_path + path}, trying previous frames...")
+            frame_num = int(path[-8:-4])
+            found = False
+            
+            # Try previous frames (up to 10 frames back)
+            for offset in range(1, 11):
+                if frame_num - offset < 0:
+                    break
+                new_path = path[:-8] + "%04d.jpg" % (frame_num - offset)
+                try:
+                    img = Image.open(self.root_path + new_path)
+                    _logger.warning(f"  -> Successfully loaded frame {frame_num - offset}")
+                    found = True
+                    break
+                except:
+                    continue
+            
+            if not found:
+                _logger.error(f"Could not find any valid frame for {path}")
+                raise FileNotFoundError(f"No valid frame found for {self.root_path + path}")
+        
         return img
 
     def _load_json(self, path):

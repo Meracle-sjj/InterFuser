@@ -22,7 +22,11 @@ class GlobalConfig:
 
     max_speed = 5
     collision_buffer = [2.5, 1.2]
-    model_path = "leaderboard/team_code/interfuser.pth.tar"
+    # Model path: can be overridden by INTERFUSER_MODEL_PATH environment variable
+    model_path = os.environ.get(
+        "INTERFUSER_MODEL_PATH", 
+        "leaderboard/team_code/interfuser02.pth.tar"
+    )
     momentum = 0
     skip_frames = 1
     detect_threshold = 0.04

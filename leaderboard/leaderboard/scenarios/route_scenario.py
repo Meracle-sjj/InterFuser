@@ -12,6 +12,7 @@ This module provides Challenge routes as standalone scenarios
 from __future__ import print_function
 
 import math
+import os
 import xml.etree.ElementTree as ET
 import numpy.random as random
 
@@ -74,7 +75,7 @@ def oneshot_behavior(name, variable_name, behaviour):
     _ = blackboard.set(variable_name, False)
 
     # Wait until the scenario has ended
-    subtree_root = py_trees.composites.Selector(name=name)
+    subtree_root = py_trees.composites.Selector(name=name, memory=False)
     check_flag = py_trees.blackboard.CheckBlackboardVariable(
         name=variable_name + " Done?",
         variable_name=variable_name,
@@ -91,7 +92,7 @@ def oneshot_behavior(name, variable_name, behaviour):
         behaviour.add_child(set_flag)
         sequence = behaviour
     else:
-        sequence = py_trees.composites.Sequence(name="OneShot")
+        sequence = py_trees.composites.Sequence(name="OneShot", memory=False)
         sequence.add_children([behaviour, set_flag])
 
     subtree_root.add_children([check_flag, sequence])
@@ -465,6 +466,7 @@ class RouteScenario(BasicScenario):
         }
 
         amount = town_amount[config.town] if config.town in town_amount else 0
+        amount = int(os.environ.get("INTERFUSER_BG_VEHICLES", str(amount)))  # override for testing
 
         new_actors = CarlaDataProvider.request_new_batch_actors('vehicle.*',
                                                                 amount,
@@ -475,6 +477,9 @@ class RouteScenario(BasicScenario):
 
         if new_actors is None:
             raise Exception("Error: Unable to add the background activity, all spawn points were occupied")
+
+        n_spawned = sum(1 for _a in new_actors if _a is not None)
+        print(f"[TRAFFIC] {config.town}: requested {amount} background vehicles, spawned {n_spawned}", flush=True)
 
         for _actor in new_actors:
             self.other_actors.append(_actor)
@@ -489,10 +494,31 @@ class RouteScenario(BasicScenario):
         """
         scenario_trigger_distance = 1.5  # Max trigger distance between route and scenario
 
-        behavior = py_trees.composites.Parallel(policy=py_trees.common.ParallelPolicy.SUCCESS_ON_ONE)
+        # py_trees compatibility: ParallelPolicy used to expose enum attributes
+        # (SUCCESS_ON_ONE / SUCCESS_ON_ALL). Newer versions use classes
+        # (SuccessOnOne / SuccessOnAll). Support both without pinning a version.
+        def _parallel_policy(success_on_one=True):
+            PP = py_trees.common.ParallelPolicy
+            # Old enum-style API
+            if hasattr(PP, "SUCCESS_ON_ONE") and hasattr(PP, "SUCCESS_ON_ALL"):
+                return PP.SUCCESS_ON_ONE if success_on_one else PP.SUCCESS_ON_ALL
+            # New class-style API
+            if hasattr(PP, "SuccessOnOne") and hasattr(PP, "SuccessOnAll"):
+                try:
+                    return PP.SuccessOnOne(synchronise=False) if success_on_one else PP.SuccessOnAll(synchronise=False)
+                except TypeError:
+                    # Some versions don't take synchronise kwarg
+                    return PP.SuccessOnOne() if success_on_one else PP.SuccessOnAll()
+            # Fallback conservatively
+            return getattr(PP, "SuccessOnAll", None)() if success_on_one is False else getattr(PP, "SuccessOnOne", None)()
+
+        behavior = py_trees.composites.Parallel(
+            name="RouteScenarioRoot",
+            policy=_parallel_policy(success_on_one=True)
+        )
 
         subbehavior = py_trees.composites.Parallel(name="Behavior",
-                                                   policy=py_trees.common.ParallelPolicy.SUCCESS_ON_ALL)
+                                                   policy=_parallel_policy(success_on_one=False))
 
         scenario_behaviors = []
         blackboard_list = []

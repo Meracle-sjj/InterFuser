@@ -133,7 +133,7 @@ class LeaderboardEvaluator(object):
         """
 
         # Simulation still running and in synchronous mode?
-        if self.manager and self.manager.get_running_status() \
+        if hasattr(self, 'manager') and self.manager and self.manager.get_running_status() \
                 and hasattr(self, 'world') and self.world:
             # Reset to asynchronous mode
             settings = self.world.get_settings()
@@ -142,7 +142,7 @@ class LeaderboardEvaluator(object):
             self.world.apply_settings(settings)
             self.traffic_manager.set_synchronous_mode(False)
 
-        if self.manager:
+        if hasattr(self, 'manager') and self.manager:
             self.manager.cleanup()
 
         CarlaDataProvider.cleanup()
@@ -204,7 +204,15 @@ class LeaderboardEvaluator(object):
         Load a new CARLA world and provide data to CarlaDataProvider
         """
 
-        self.world = self.client.load_world(town)
+        if os.environ.get("INTERFUSER_REUSE_CURRENT_WORLD", "0") == "1":
+            current_world = self.client.get_world()
+            current_map = os.path.basename(current_world.get_map().name).replace("_Opt", "")
+            if current_map == town:
+                self.world = current_world
+            else:
+                self.world = self.client.load_world(town)
+        else:
+            self.world = self.client.load_world(town)
         settings = self.world.get_settings()
         settings.fixed_delta_seconds = 1.0 / self.frame_rate
         settings.synchronous_mode = True
@@ -220,13 +228,39 @@ class LeaderboardEvaluator(object):
         self.traffic_manager.set_synchronous_mode(True)
         self.traffic_manager.set_random_device_seed(int(args.trafficManagerSeed))
 
+        # Background-traffic behavior tuning (all env-var controllable, wrapped so a
+        # CARLA 0.9.16 API-name difference can never crash the eval).
+        if os.environ.get("INTERFUSER_TM_HYBRID_PHYSICS", "0") == "1":
+            try:
+                self.traffic_manager.set_hybrid_physics_mode(True)  # full physics near ego
+                self.traffic_manager.set_hybridphysicsmode_radius(
+                    float(os.environ.get("INTERFUSER_TM_HYBRID_RADIUS", "50.0")))
+            except Exception as _e:
+                print(f"[TM] hybrid physics unavailable: {_e}", flush=True)
+        try:
+            self.traffic_manager.set_global_distance_to_leading_vehicle(
+                float(os.environ.get("INTERFUSER_TM_LEADING_DISTANCE", "2.0")))
+        except Exception as _e:
+            print(f"[TM] set_global_distance unavailable: {_e}", flush=True)
+        try:
+            self.traffic_manager.set_global_percentage_speed_difference(
+                float(os.environ.get("INTERFUSER_TM_SPEED_DIFF", "10.0")))  # +10% => calmer (under limit)
+        except Exception as _e:
+            print(f"[TM] set_speed_diff unavailable: {_e}", flush=True)
+
         # Wait for the world to be ready
         if CarlaDataProvider.is_sync_mode():
             self.world.tick()
         else:
             self.world.wait_for_tick()
 
-        if CarlaDataProvider.get_map().name != town:
+        # Some CARLA builds report map name with path or with '_Opt' suffix.
+        # Normalize both expected and current names to base (e.g., 'Town01').
+        current_name = CarlaDataProvider.get_map().name
+        def _norm(n: str) -> str:
+            base = n.split('/')[-1]
+            return base.replace('_Opt', '')
+        if _norm(current_name) != _norm(town):
             raise Exception("The CARLA server uses the wrong map!"
                             "This scenario requires to use map {}".format(town))
 
@@ -475,6 +509,7 @@ def main():
 
     statistics_manager = StatisticsManager()
 
+    leaderboard_evaluator = None
     try:
         leaderboard_evaluator = LeaderboardEvaluator(arguments, statistics_manager)
         leaderboard_evaluator.run(arguments)
@@ -482,7 +517,9 @@ def main():
     except Exception as e:
         traceback.print_exc()
     finally:
-        del leaderboard_evaluator
+        if leaderboard_evaluator is not None and hasattr(leaderboard_evaluator, '_cleanup'):
+            leaderboard_evaluator._cleanup()
+            del leaderboard_evaluator
 
 
 if __name__ == '__main__':

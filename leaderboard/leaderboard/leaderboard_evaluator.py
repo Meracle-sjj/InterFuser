@@ -53,6 +53,22 @@ sensors_to_icons = {
 }
 
 
+def _call_traffic_manager_api(traffic_manager, method_names, *args):
+    """Call the first TrafficManager API name available in this CARLA build."""
+    for method_name in method_names:
+        method = getattr(traffic_manager, method_name, None)
+        if method is None:
+            continue
+
+        method(*args)
+        return method_name
+
+    joined_names = ", ".join(method_names)
+    raise AttributeError(
+        "TrafficManager does not expose any of these methods: {}".format(joined_names)
+    )
+
+
 class LeaderboardEvaluator(object):
 
     """
@@ -233,18 +249,27 @@ class LeaderboardEvaluator(object):
         if os.environ.get("INTERFUSER_TM_HYBRID_PHYSICS", "0") == "1":
             try:
                 self.traffic_manager.set_hybrid_physics_mode(True)  # full physics near ego
-                self.traffic_manager.set_hybridphysicsmode_radius(
+                used = _call_traffic_manager_api(
+                    self.traffic_manager,
+                    ("set_hybridphysicsmode_radius", "set_hybrid_physics_radius"),
                     float(os.environ.get("INTERFUSER_TM_HYBRID_RADIUS", "50.0")))
+                print(f"[TM] hybrid physics enabled via {used}", flush=True)
             except Exception as _e:
                 print(f"[TM] hybrid physics unavailable: {_e}", flush=True)
         try:
-            self.traffic_manager.set_global_distance_to_leading_vehicle(
+            used = _call_traffic_manager_api(
+                self.traffic_manager,
+                ("set_global_distance_to_leading_vehicle",),
                 float(os.environ.get("INTERFUSER_TM_LEADING_DISTANCE", "2.0")))
+            print(f"[TM] leading distance configured via {used}", flush=True)
         except Exception as _e:
             print(f"[TM] set_global_distance unavailable: {_e}", flush=True)
         try:
-            self.traffic_manager.set_global_percentage_speed_difference(
+            used = _call_traffic_manager_api(
+                self.traffic_manager,
+                ("set_global_percentage_speed_difference", "global_percentage_speed_difference"),
                 float(os.environ.get("INTERFUSER_TM_SPEED_DIFF", "10.0")))  # +10% => calmer (under limit)
+            print(f"[TM] speed difference configured via {used}", flush=True)
         except Exception as _e:
             print(f"[TM] set_speed_diff unavailable: {_e}", flush=True)
 

@@ -51,6 +51,9 @@ ROUTESCENARIO = ["RouteScenario"]
 
 SECONDS_GIVEN_PER_METERS = 0.8 # for timeout
 INITIAL_SECONDS_DELAY = 5.0
+BACKGROUND_TRAFFIC_NEAR_ROAD_METERS = 2.0
+BACKGROUND_TRAFFIC_MOVING_METERS_PER_SECOND = 0.5
+BACKGROUND_TRAFFIC_MOVED_METERS = 2.0
 
 NUMBER_CLASS_TRANSLATION = {
     "Scenario1": ControlLoss,
@@ -64,6 +67,51 @@ NUMBER_CLASS_TRANSLATION = {
     "Scenario9": SignalJunctionCrossingRoute,
     "Scenario10": NoSignalJunctionCrossingRoute
 }
+
+
+def _measure_background_traffic(actors, world_map, start_locations=None):
+    start_locations = start_locations or {}
+    total = len(actors)
+    alive = 0
+    moving = 0
+    near_road = 0
+    speeds = []
+    distances = []
+    road_distances = []
+
+    for actor in actors:
+        if actor is None or not getattr(actor, "is_alive", False):
+            continue
+
+        alive += 1
+        location = actor.get_location()
+        velocity = actor.get_velocity()
+        speed = math.sqrt(velocity.x ** 2 + velocity.y ** 2)
+        start_location = start_locations.get(actor.id, location)
+        distance = start_location.distance(location)
+        waypoint = world_map.get_waypoint(
+            location,
+            project_to_road=True,
+            lane_type=carla.LaneType.Driving)
+        road_distance = location.distance(waypoint.transform.location) if waypoint else float("inf")
+
+        speeds.append(speed)
+        distances.append(distance)
+        road_distances.append(road_distance)
+        if speed > BACKGROUND_TRAFFIC_MOVING_METERS_PER_SECOND or distance > BACKGROUND_TRAFFIC_MOVED_METERS:
+            moving += 1
+        if road_distance < BACKGROUND_TRAFFIC_NEAR_ROAD_METERS:
+            near_road += 1
+
+    return {
+        "total": total,
+        "alive": alive,
+        "moving": moving,
+        "near_road": near_road,
+        "avg_speed": sum(speeds) / len(speeds) if speeds else 0.0,
+        "avg_distance": sum(distances) / len(distances) if distances else 0.0,
+        "max_road_distance": max(road_distances) if road_distances else 0.0,
+    }
 
 
 def oneshot_behavior(name, variable_name, behaviour):
@@ -97,6 +145,13 @@ def oneshot_behavior(name, variable_name, behaviour):
 
     subtree_root.add_children([check_flag, sequence])
     return subtree_root
+
+
+def _tick_world(world):
+    if CarlaDataProvider.is_sync_mode():
+        world.tick()
+    else:
+        world.wait_for_tick()
 
 
 def convert_json_to_transform(actor_dict):
@@ -480,6 +535,23 @@ class RouteScenario(BasicScenario):
 
         n_spawned = sum(1 for _a in new_actors if _a is not None)
         print(f"[TRAFFIC] {config.town}: requested {amount} background vehicles, spawned {n_spawned}", flush=True)
+
+        warmup_ticks = int(os.environ.get("INTERFUSER_BG_WARMUP_TICKS", "40"))
+        if warmup_ticks > 0 and n_spawned > 0:
+            world = CarlaDataProvider.get_world()
+            world_map = CarlaDataProvider.get_map()
+            live_actors = [_actor for _actor in new_actors if _actor is not None]
+            start_locations = {_actor.id: _actor.get_location() for _actor in live_actors if _actor.is_alive}
+            for _ in range(warmup_ticks):
+                _tick_world(world)
+            health = _measure_background_traffic(live_actors, world_map, start_locations)
+            print(
+                "[TRAFFIC_HEALTH] ticks={ticks} total={total} alive={alive} moving={moving} "
+                "near_road={near_road} avg_speed={avg_speed:.2f} avg_distance={avg_distance:.1f} "
+                "max_road_distance={max_road_distance:.2f}".format(
+                    ticks=warmup_ticks,
+                    **health),
+                flush=True)
 
         for _actor in new_actors:
             self.other_actors.append(_actor)

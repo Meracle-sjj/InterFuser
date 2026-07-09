@@ -69,6 +69,13 @@ def _call_traffic_manager_api(traffic_manager, method_names, *args):
     )
 
 
+def _normalized_town_name(map_name):
+    town = os.path.basename(str(map_name))
+    if town.endswith("_Opt"):
+        town = town[:-len("_Opt")]
+    return town
+
+
 class LeaderboardEvaluator(object):
 
     """
@@ -222,8 +229,9 @@ class LeaderboardEvaluator(object):
 
         if os.environ.get("INTERFUSER_REUSE_CURRENT_WORLD", "0") == "1":
             current_world = self.client.get_world()
-            current_map = os.path.basename(current_world.get_map().name).replace("_Opt", "")
-            if current_map == town:
+            current_map = _normalized_town_name(current_world.get_map().name)
+            requested_map = _normalized_town_name(town)
+            if current_map == requested_map:
                 self.world = current_world
             else:
                 self.world = self.client.load_world(town)

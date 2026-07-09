@@ -1,9 +1,15 @@
 import unittest
 
-from leaderboard.leaderboard_evaluator import _call_traffic_manager_api
+from leaderboard.leaderboard_evaluator import _call_traffic_manager_api, _normalized_town_name
 
 
 class TrafficManagerCompatTests(unittest.TestCase):
+    def test_normalizes_opt_map_names_for_reuse_check(self):
+        self.assertEqual(_normalized_town_name("Town02_Opt"), "Town02")
+        self.assertEqual(_normalized_town_name("Carla/Maps/Town02_Opt"), "Town02")
+        self.assertEqual(_normalized_town_name("/Game/Carla/Maps/Town02_Opt"), "Town02")
+        self.assertEqual(_normalized_town_name("Town03"), "Town03")
+
     def test_uses_first_available_method_name(self):
         class FakeTrafficManager:
             def __init__(self):
@@ -63,5 +69,4 @@ class TrafficManagerCompatTests(unittest.TestCase):
     def test_raises_when_no_api_name_exists(self):
         with self.assertRaisesRegex(AttributeError, "missing_one, missing_two"):
             _call_traffic_manager_api(object(), ("missing_one", "missing_two"), 1)
-
 

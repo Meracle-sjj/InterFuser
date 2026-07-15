@@ -22,6 +22,10 @@ except ImportError:
     BEHAVIOR_AGENT_AVAILABLE = False
 from srunner.scenariomanager.carla_data_provider import CarlaDataProvider
 from leaderboard.autoagents.autonomous_agent import AutonomousAgent, Track
+from traffic_element_labels import (
+    collect_traffic_element_labels,
+    merge_legacy_affordances,
+)
 
 
 def get_entry_point():
@@ -65,6 +69,7 @@ class InterfuserDataCollector(AutonomousAgent):
             '3d_bbs',
             # Affordances and metadata
             'affordances',
+            'traffic_elements',
             'measurements',
             'other_actors'
         ]
@@ -229,7 +234,13 @@ class InterfuserDataCollector(AutonomousAgent):
     def _save_all_data(self, input_data, control, timestamp):
         """Save all required data types"""
         frame = self.step // self.save_freq
-        
+
+        hero = CarlaDataProvider.get_hero_actor()
+        world = CarlaDataProvider.get_world()
+        if not hero or not world:
+            return
+        traffic_elements = collect_traffic_element_labels(hero, world)
+
         # 1. RGB images (400x300)
         for cam in ['rgb_front', 'rgb_left', 'rgb_right', 'rgb_rear']:
             if cam in input_data:
@@ -253,12 +264,8 @@ class InterfuserDataCollector(AutonomousAgent):
             lidar_data = input_data['lidar'][1]
             np.save(self.save_path / 'lidar' / f"{frame:04d}.npy", lidar_data)
         
-        # Get world and actors
-        hero = CarlaDataProvider.get_hero_actor()
-        world = CarlaDataProvider.get_world()
-        
-        if not hero or not world:
-            return
+        with open(self.save_path / 'traffic_elements' / f"{frame:04d}.json", 'w') as f:
+            json.dump(traffic_elements, f, indent=2)
         
         # 5. Birdview (top-down segmentation)
         birdview = self._generate_birdview(hero, world)
@@ -276,7 +283,7 @@ class InterfuserDataCollector(AutonomousAgent):
                 json.dump(bb_2d, f, indent=2)
         
         # 8. Affordances
-        affordances = self._get_affordances(hero, world)
+        affordances = self._get_affordances(hero, world, traffic_elements)
         with open(self.save_path / 'affordances' / f"{frame:04d}.json", 'w') as f:
             json.dump(affordances, f, indent=2)
         
@@ -388,20 +395,15 @@ class InterfuserDataCollector(AutonomousAgent):
         
         return bb_2d
 
-    def _get_affordances(self, hero, world):
+    def _get_affordances(self, hero, world, traffic_elements=None):
         """Get affordances: traffic lights, stop signs, hazard detection"""
         affordances = {
-            'traffic_light': None,
-            'stop_sign': False,
             'hazard_vehicle': False,
             'hazard_pedestrian': False
         }
-        
-        # Check for traffic light
-        if hero.is_at_traffic_light():
-            traffic_light = hero.get_traffic_light()
-            if traffic_light:
-                affordances['traffic_light'] = str(traffic_light.state)
+
+        if traffic_elements is None:
+            traffic_elements = collect_traffic_element_labels(hero, world)
         
         # Check for nearby hazards
         hero_loc = hero.get_location()
@@ -416,7 +418,7 @@ class InterfuserDataCollector(AutonomousAgent):
                 affordances['hazard_vehicle'] = True
                 break
         
-        return affordances
+        return merge_legacy_affordances(affordances, traffic_elements)
 
     def _get_measurements(self, hero, input_data, control, timestamp):
         """Get ego vehicle measurements"""

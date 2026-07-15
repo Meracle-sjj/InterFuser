@@ -6,6 +6,18 @@ import numpy as np
 
 
 IMAGE_SCHEMA_VERSION = 1
+ASSOCIATION = {
+    "roi_expand_pixels": 6,
+    "minimum_semantic_pixels": 3,
+    "traffic_light": {
+        "semantic_tag": 18,
+        "depth_tolerance_m": 4.0,
+    },
+    "stop_sign": {
+        "semantic_tag": 12,
+        "depth_tolerance_m": 6.0,
+    },
+}
 
 
 def camera_intrinsics(width, height, fov_degrees):
@@ -23,28 +35,38 @@ def camera_intrinsics(width, height, fov_degrees):
     )
 
 
+def _rotation_matrix(pitch, yaw, roll):
+    cy = math.cos(math.radians(float(yaw)))
+    sy = math.sin(math.radians(float(yaw)))
+    cr = math.cos(math.radians(float(roll)))
+    sr = math.sin(math.radians(float(roll)))
+    cp = math.cos(math.radians(float(pitch)))
+    sp = math.sin(math.radians(float(pitch)))
+    return np.array(
+        [
+            [cp * cy, cy * sp * sr - sy * cr, -cy * sp * cr - sy * sr],
+            [sy * cp, sy * sp * sr + cy * cr, -sy * sp * cr + cy * sr],
+            [sp, -cp * sr, cp * cr],
+        ],
+        dtype=np.float64,
+    )
+
+
 def transform_matrix(transform):
     """Return the CARLA local-to-world homogeneous transform matrix."""
     rotation = transform.rotation
     location = transform.location
-    cy = math.cos(math.radians(float(rotation.yaw)))
-    sy = math.sin(math.radians(float(rotation.yaw)))
-    cr = math.cos(math.radians(float(rotation.roll)))
-    sr = math.sin(math.radians(float(rotation.roll)))
-    cp = math.cos(math.radians(float(rotation.pitch)))
-    sp = math.sin(math.radians(float(rotation.pitch)))
-
     matrix = np.identity(4, dtype=np.float64)
     matrix[:3, 3] = [
         float(location.x),
         float(location.y),
         float(location.z),
     ]
-    matrix[:3, :3] = [
-        [cp * cy, cy * sp * sr - sy * cr, -cy * sp * cr - sy * sr],
-        [sy * cp, sy * sp * sr + cy * cr, -sy * sp * cr + cy * sr],
-        [sp, -cp * sr, cp * cr],
-    ]
+    matrix[:3, :3] = _rotation_matrix(
+        rotation.pitch,
+        rotation.yaw,
+        rotation.roll,
+    )
     return matrix
 
 
@@ -203,3 +225,273 @@ def clip_image_segment(start, end, width, height):
         [x1 + lower * dx, y1 + lower * dy],
         [x1 + upper * dx, y1 + upper * dy],
     ]
+
+
+def _dict_location(location):
+    return np.array(
+        [float(location["x"]), float(location["y"]), float(location["z"])],
+        dtype=np.float64,
+    )
+
+
+def _actor_world_vertices(actor, element):
+    bounding_box = getattr(actor, "bounding_box", None)
+    if bounding_box is not None and hasattr(bounding_box, "get_world_vertices"):
+        vertices = bounding_box.get_world_vertices(actor.get_transform())
+        if vertices:
+            return (
+                np.array(
+                    [[item.x, item.y, item.z] for item in vertices],
+                    dtype=np.float64,
+                ),
+                "actor_bounding_box",
+            )
+
+    trigger = element.get("trigger_volume")
+    if not isinstance(trigger, dict):
+        raise ValueError("actor has no bounding box or trigger volume")
+    center = _dict_location(trigger["center"])
+    extent = trigger["extent"]
+    rotation = trigger["rotation"]
+    local = np.array(
+        [
+            [x, y, z]
+            for x in (-float(extent["x"]), float(extent["x"]))
+            for y in (-float(extent["y"]), float(extent["y"]))
+            for z in (-float(extent["z"]), float(extent["z"]))
+        ],
+        dtype=np.float64,
+    )
+    rotated = (
+        _rotation_matrix(
+            rotation.get("pitch", 0.0),
+            rotation.get("yaw", 0.0),
+            rotation.get("roll", 0.0),
+        )
+        @ local.T
+    ).T
+    return rotated + center, "trigger_volume"
+
+
+def _unknown_element(element, element_type, association_source):
+    result = {
+        "actor_id": int(element["actor_id"]),
+        "element_type": element_type,
+        "visibility": "unknown",
+        "bbox_xyxy": None,
+        "geometry_roi_xyxy": None,
+        "semantic_pixel_count": 0,
+        "median_depth_residual_m": None,
+        "association_source": association_source,
+        "geometry_source": None,
+    }
+    if element_type == "traffic_light":
+        result.update(
+            {
+                "state": element["state"],
+                "is_active_for_ego": bool(element["is_active_for_ego"]),
+                "controls_ego_lane": bool(element["controls_ego_lane"]),
+                "relevant_to_ego": bool(element["relevant_to_ego"]),
+            }
+        )
+    else:
+        result["affects_ego_route"] = bool(element["affects_ego_route"])
+    return result
+
+
+def _build_element_view(
+    element,
+    element_type,
+    actor,
+    camera,
+    intrinsic,
+    depth_m,
+):
+    result = _unknown_element(element, element_type, "not_evaluated")
+    if actor is None:
+        result["association_source"] = "actor_missing"
+        return result, f"actor {int(element['actor_id'])} unavailable"
+
+    try:
+        vertices, geometry_source = _actor_world_vertices(actor, element)
+        roi = projected_roi(
+            vertices,
+            camera["transform"],
+            intrinsic,
+            camera["width"],
+            camera["height"],
+            ASSOCIATION["roi_expand_pixels"],
+        )
+        actor_location = _dict_location(element["location"])
+        camera_location = np.array(
+            [
+                camera["transform"].location.x,
+                camera["transform"].location.y,
+                camera["transform"].location.z,
+            ],
+            dtype=np.float64,
+        )
+        actor_distance = float(np.linalg.norm(actor_location - camera_location))
+        settings = ASSOCIATION[element_type]
+        associated = associate_semantic_box(
+            roi,
+            camera["semantic"],
+            depth_m,
+            actor_distance,
+            settings["semantic_tag"],
+            settings["depth_tolerance_m"],
+            ASSOCIATION["minimum_semantic_pixels"],
+        )
+    except Exception as exc:
+        result["association_source"] = "projection_error"
+        return result, f"actor {int(element['actor_id'])} projection failed: {exc}"
+
+    result.update(associated)
+    result["geometry_roi_xyxy"] = roi
+    result["geometry_source"] = geometry_source
+    result["association_source"] = (
+        "semantic_depth_confirmed"
+        if associated["visibility"] == "visible"
+        else "semantic_depth_no_support"
+    )
+    return result, None
+
+
+def _project_stop_line(
+    line,
+    owner_actor_id,
+    owner_type,
+    camera,
+    intrinsic,
+):
+    result = {
+        "owner_actor_id": int(owner_actor_id),
+        "owner_type": owner_type,
+        "geometry_source": line["geometry_source"],
+        "longitudinal_distance": float(line["longitudinal_distance"]),
+        "ego_before_line": bool(line["ego_before_line"]),
+        "projected_endpoints": None,
+        "image_segment": None,
+        "projection_status": "not_projected",
+    }
+    points = np.array(
+        [
+            _dict_location(line["left_endpoint"]),
+            _dict_location(line["right_endpoint"]),
+        ],
+        dtype=np.float64,
+    )
+    camera_points = world_to_camera(points, camera["transform"])
+    pixels, in_front = project_camera_points(camera_points, intrinsic)
+    if not bool(np.all(in_front)):
+        result["projection_status"] = "behind_camera"
+        return result
+
+    endpoints = pixels.tolist()
+    result["projected_endpoints"] = endpoints
+    segment = clip_image_segment(
+        endpoints[0],
+        endpoints[1],
+        camera["width"],
+        camera["height"],
+    )
+    result["image_segment"] = segment
+    result["projection_status"] = "projected" if segment is not None else "outside_image"
+    return result
+
+
+def _build_camera_record(camera, traffic_elements, actors_by_id):
+    record = {
+        "width": camera.get("width"),
+        "height": camera.get("height"),
+        "fov_degrees": camera.get("fov_degrees"),
+        "traffic_lights": [],
+        "stop_signs": [],
+        "stop_lines": [],
+        "errors": [],
+    }
+    camera_error = camera.get("error")
+    if camera_error:
+        record["errors"].append(str(camera_error))
+        for element in traffic_elements["traffic_lights"]:
+            record["traffic_lights"].append(
+                _unknown_element(element, "traffic_light", "sensor_unavailable")
+            )
+        for element in traffic_elements["stop_signs"]:
+            record["stop_signs"].append(
+                _unknown_element(element, "stop_sign", "sensor_unavailable")
+            )
+        return record
+
+    intrinsic = camera_intrinsics(
+        camera["width"],
+        camera["height"],
+        camera["fov_degrees"],
+    )
+    depth_m = (
+        np.asarray(camera["depth_m"], dtype=np.float64)
+        if "depth_m" in camera
+        else decode_carla_depth(camera["depth_raw"])
+    )
+    for element_type, source_key, target_key in (
+        ("traffic_light", "traffic_lights", "traffic_lights"),
+        ("stop_sign", "stop_signs", "stop_signs"),
+    ):
+        for element in traffic_elements[source_key]:
+            actor_id = int(element["actor_id"])
+            view, error = _build_element_view(
+                element,
+                element_type,
+                actors_by_id.get(actor_id),
+                camera,
+                intrinsic,
+                depth_m,
+            )
+            record[target_key].append(view)
+            if error:
+                record["errors"].append(error)
+            for line in element["stop_lines"]:
+                try:
+                    record["stop_lines"].append(
+                        _project_stop_line(
+                            line,
+                            actor_id,
+                            element_type,
+                            camera,
+                            intrinsic,
+                        )
+                    )
+                except Exception as exc:
+                    record["errors"].append(
+                        f"actor {actor_id} stop line projection failed: {exc}"
+                    )
+    return record
+
+
+def build_traffic_element_view_record(
+    frame_id,
+    traffic_elements,
+    actors_by_id,
+    camera_frames,
+):
+    """Build a versioned image-label record for one saved sensor frame."""
+    return {
+        "schema_version": IMAGE_SCHEMA_VERSION,
+        "source_traffic_element_schema_version": traffic_elements["schema_version"],
+        "frame_id": str(frame_id),
+        "association": {
+            "roi_expand_pixels": ASSOCIATION["roi_expand_pixels"],
+            "minimum_semantic_pixels": ASSOCIATION["minimum_semantic_pixels"],
+            "traffic_light": dict(ASSOCIATION["traffic_light"]),
+            "stop_sign": dict(ASSOCIATION["stop_sign"]),
+        },
+        "cameras": {
+            camera_name: _build_camera_record(
+                camera,
+                traffic_elements,
+                actors_by_id,
+            )
+            for camera_name, camera in camera_frames.items()
+        },
+        "errors": list(traffic_elements.get("errors", [])),
+    }

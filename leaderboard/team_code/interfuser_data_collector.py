@@ -26,6 +26,7 @@ from traffic_element_labels import (
     collect_traffic_element_labels,
     merge_legacy_affordances,
 )
+from traffic_element_projection import build_traffic_element_view_record
 
 
 def get_entry_point():
@@ -70,6 +71,7 @@ class InterfuserDataCollector(AutonomousAgent):
             # Affordances and metadata
             'affordances',
             'traffic_elements',
+            'traffic_element_views',
             'measurements',
             'other_actors'
         ]
@@ -240,6 +242,23 @@ class InterfuserDataCollector(AutonomousAgent):
         if not hero or not world:
             return
         traffic_elements = collect_traffic_element_labels(hero, world)
+        camera_frames = self._get_traffic_element_camera_frames(input_data)
+        relevant_actor_ids = {
+            int(item["actor_id"])
+            for key in ("traffic_lights", "stop_signs")
+            for item in traffic_elements[key]
+        }
+        actors_by_id = {
+            int(actor.id): actor
+            for actor in world.get_actors()
+            if int(actor.id) in relevant_actor_ids
+        }
+        traffic_element_views = build_traffic_element_view_record(
+            frame_id=f"{frame:04d}",
+            traffic_elements=traffic_elements,
+            actors_by_id=actors_by_id,
+            camera_frames=camera_frames,
+        )
 
         # 1. RGB images (400x300)
         for cam in ['rgb_front', 'rgb_left', 'rgb_right', 'rgb_rear']:
@@ -266,6 +285,10 @@ class InterfuserDataCollector(AutonomousAgent):
         
         with open(self.save_path / 'traffic_elements' / f"{frame:04d}.json", 'w') as f:
             json.dump(traffic_elements, f, indent=2)
+        self._write_json_atomic(
+            self.save_path / 'traffic_element_views' / f"{frame:04d}.json",
+            traffic_element_views,
+        )
         
         # 5. Birdview (top-down segmentation)
         birdview = self._generate_birdview(hero, world)
@@ -296,6 +319,45 @@ class InterfuserDataCollector(AutonomousAgent):
         other_actors = self._get_other_actors(hero, world)
         with open(self.save_path / 'other_actors' / f"{frame:04d}.json", 'w') as f:
             json.dump(other_actors, f, indent=2)
+
+    def _get_traffic_element_camera_frames(self, input_data):
+        """Build aligned camera evidence without synthesizing missing sensors."""
+        frames = {}
+        sensor_objects = getattr(self.sensor_interface, "_sensors_objects", {})
+        for position in ("front", "left", "right"):
+            seg_id = f"seg_{position}"
+            depth_id = f"depth_{position}"
+            sensor = sensor_objects.get(seg_id)
+            if sensor is None or seg_id not in input_data or depth_id not in input_data:
+                frames[position] = {
+                    "width": 400,
+                    "height": 300,
+                    "fov_degrees": 100.0,
+                    "error": (
+                        f"required sensor unavailable: {seg_id} or {depth_id}"
+                    ),
+                }
+                continue
+
+            semantic = input_data[seg_id][1][:, :, 2]
+            frames[position] = {
+                "transform": sensor.get_transform(),
+                "semantic": semantic,
+                "depth_raw": input_data[depth_id][1][:, :, :3],
+                "width": int(semantic.shape[1]),
+                "height": int(semantic.shape[0]),
+                "fov_degrees": 100.0,
+            }
+        return frames
+
+    @staticmethod
+    def _write_json_atomic(path, record):
+        temporary = path.with_suffix(".json.tmp")
+        with open(temporary, "w") as file_handle:
+            json.dump(record, file_handle, indent=2)
+            file_handle.flush()
+            os.fsync(file_handle.fileno())
+        os.replace(temporary, path)
 
     def _generate_birdview(self, hero, world):
         """Generate top-down segmentation view"""

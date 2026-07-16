@@ -24,10 +24,6 @@ STATUS_FILE="${RESULT_ROOT}/route_status.tsv"
 PROFILED_TRAFFIC_ROUTE=$1
 PROFILED_HARD_NEGATIVE_ROUTE=$2
 
-if [ -e "${DATA_ROOT}" ] || [ -e "${RESULT_ROOT}" ]; then
-  echo "refusing to reuse existing batch run: ${RUN_ID}" >&2
-  exit 73
-fi
 for route_file in "${PROFILED_TRAFFIC_ROUTE}" "${PROFILED_HARD_NEGATIVE_ROUTE}"; do
   if [ ! -f "${route_file}" ]; then
     echo "route file not found: ${route_file}" >&2
@@ -35,10 +31,28 @@ for route_file in "${PROFILED_TRAFFIC_ROUTE}" "${PROFILED_HARD_NEGATIVE_ROUTE}";
   fi
 done
 
+export PYTHONPATH="$PWD/interfuser:$PWD/carla/PythonAPI:$PWD/carla/PythonAPI/examples:$PWD/carla/PythonAPI/carla:$PWD/leaderboard:$PWD/leaderboard/team_code:$PWD/scenario_runner:$PWD"
+PHASE_SCHEMA=$("${PYTHON_BIN}" -c 'from traffic_element_labels import SCHEMA_VERSION; print(SCHEMA_VERSION)')
+VIEW_SCHEMA=$("${PYTHON_BIN}" -c 'from traffic_element_projection import IMAGE_SCHEMA_VERSION; print(IMAGE_SCHEMA_VERSION)')
+[ "${PHASE_SCHEMA}" = 2 ] || { echo "expected phase schema 2" >&2; exit 65; }
+[ "${VIEW_SCHEMA}" = 3 ] || { echo "expected evidence schema 3" >&2; exit 65; }
+"${PYTHON_BIN}" tools/data/check_leaderboard_stop_target_geometry.py --help \
+  >/dev/null || { echo "geometry parity tool unavailable" >&2; exit 65; }
+
+if [ "${TRAFFIC_BATCH_VALIDATE_ONLY:-0}" = 1 ]; then
+  echo "traffic batch validation passed: phase=${PHASE_SCHEMA} evidence=${VIEW_SCHEMA}"
+  exit 0
+fi
+
+if [ -e "${DATA_ROOT}" ] || [ -e "${RESULT_ROOT}" ]; then
+  echo "refusing to reuse existing batch run: ${RUN_ID}" >&2
+  exit 73
+fi
+
 mkdir -p "${DATA_ROOT}" "${RESULT_ROOT}/logs" "${RESULT_ROOT}/checkpoints" \
-  "${RESULT_ROOT}/audits" "${RESULT_ROOT}/routes"
+  "${RESULT_ROOT}/audits" "${RESULT_ROOT}/geometry" "${RESULT_ROOT}/routes"
 : > "${RUN_LOG}"
-printf 'route\tbackground\tevaluator_exit\tphase1_audit_exit\tview_audit_exit\ttotal_frames\ttotal_bytes\n' \
+printf 'route\tbackground\tevaluator_exit\tgeometry_exit\tphase2_audit_exit\tview_audit_exit\tacceptance_exit\ttotal_frames\ttotal_bytes\n' \
   > "${STATUS_FILE}"
 
 FIXED_ROUTE13="${RESULT_ROOT}/routes/route_13_Town03_Opt.xml"
@@ -95,7 +109,6 @@ export PYTHONUNBUFFERED=1
 export INTERFUSER_REUSE_CURRENT_WORLD=1
 export INTERFUSER_BG_WARMUP_TICKS=40
 export WEATHER_ID=0
-export PYTHONPATH="$PWD/interfuser:$PWD/carla/PythonAPI:$PWD/carla/PythonAPI/examples:$PWD/carla/PythonAPI/carla:$PWD/leaderboard:$PWD/leaderboard/team_code:$PWD/scenario_runner:$PWD"
 
 count_frames() {
   find "${DATA_ROOT}" -path '*/traffic_element_views/*.json' -type f 2>/dev/null \
@@ -201,6 +214,63 @@ print(
 PY
 }
 
+check_route_geometry() {
+  local route_file=$1
+  local town output
+  town=$(route_map "${route_file}") || return 1
+  output="${RESULT_ROOT}/geometry/${town}.json"
+  if [ -f "${output}" ]; then
+    return 0
+  fi
+  "${PYTHON_BIN}" tools/data/check_leaderboard_stop_target_geometry.py \
+    --host 127.0.0.1 --port "${PORT}" --output "${output}" "${town}" \
+    >> "${RUN_LOG}" 2>&1
+}
+
+validate_acceptance() {
+  local phase_audit=$1
+  local view_audit=$2
+  "${PYTHON_BIN}" - "${phase_audit}" "${view_audit}" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+phase = json.loads(Path(sys.argv[1]).read_text())
+view = json.loads(Path(sys.argv[2]).read_text())
+phase_fields = {
+    "valid_stop_targets",
+    "unknown_stop_targets",
+    "unknown_reasons",
+    "primary_stop_target_frames",
+    "forbidden_stop_occurrences",
+}
+view_fields = {
+    "projected_stop_boundaries",
+    "projected_stop_corridors",
+    "painted_line_candidates",
+    "verified_painted_lines",
+    "lidar_available_targets",
+    "lidar_unknown_targets",
+    "forbidden_stop_occurrences",
+}
+missing = sorted(phase_fields - set(phase)) + sorted(view_fields - set(view))
+if missing:
+    raise SystemExit("acceptance fields missing: {}".format(missing))
+if phase["forbidden_stop_occurrences"] or view["forbidden_stop_occurrences"]:
+    raise SystemExit("forbidden stop occurrences must be zero")
+target_count = phase["valid_stop_targets"] + phase["unknown_stop_targets"]
+lidar_count = view["lidar_available_targets"] + view["lidar_unknown_targets"]
+if lidar_count != target_count:
+    raise SystemExit(
+        "lidar target evidence mismatch: phase={} evidence={}".format(
+            target_count, lidar_count
+        )
+    )
+if phase["unknown_stop_targets"] and not phase["unknown_reasons"]:
+    raise SystemExit("unknown stop targets require reason counts")
+PY
+}
+
 monitor_caps() {
   local process_group=$1
   local marker=$2
@@ -229,9 +299,18 @@ run_route() {
 
   echo "[ROUTE_START] key=${key} background=${background}" >> "${RUN_LOG}"
   if ! preload_route_map "${route_file}"; then
-    printf '%s\t%s\t97\t-\t-\t%s\t%s\n' "${key}" "${background}" \
+    printf '%s\t%s\t97\t-\t-\t-\t-\t%s\t%s\n' "${key}" "${background}" \
       "$(count_frames)" "$(count_bytes)" >> "${STATUS_FILE}"
     return 97
+  fi
+
+  local geometry_exit=0
+  check_route_geometry "${route_file}" || geometry_exit=$?
+  if [ "${geometry_exit}" -ne 0 ]; then
+    printf '%s\t%s\t-\t%s\t-\t-\t-\t%s\t%s\n' \
+      "${key}" "${background}" "${geometry_exit}" \
+      "$(count_frames)" "$(count_bytes)" >> "${STATUS_FILE}"
+    return 96
   fi
 
   mkdir -p "${output_root}"
@@ -270,34 +349,46 @@ run_route() {
   fi
   kill_evaluator_2400
 
-  local phase1_exit=0
+  local phase2_exit=0
   local view_exit=0
+  local acceptance_exit=0
+  local phase_audit="${RESULT_ROOT}/audits/${key}_bg${background}_phase2.json"
+  local view_audit="${RESULT_ROOT}/audits/${key}_bg${background}_evidence.json"
   "${PYTHON_BIN}" tools/data/audit_traffic_element_labels.py "${output_root}" \
-    > "${RESULT_ROOT}/audits/${key}_bg${background}_phase1.json" \
-    2> "${RESULT_ROOT}/audits/${key}_bg${background}_phase1.err" \
-    || phase1_exit=$?
+    > "${phase_audit}" \
+    2> "${RESULT_ROOT}/audits/${key}_bg${background}_phase2.err" \
+    || phase2_exit=$?
   "${PYTHON_BIN}" tools/data/audit_traffic_element_views.py "${output_root}" \
-    > "${RESULT_ROOT}/audits/${key}_bg${background}_views.json" \
-    2> "${RESULT_ROOT}/audits/${key}_bg${background}_views.err" \
+    > "${view_audit}" \
+    2> "${RESULT_ROOT}/audits/${key}_bg${background}_evidence.err" \
     || view_exit=$?
+  if [ "${phase2_exit}" -eq 0 ] && [ "${view_exit}" -eq 0 ]; then
+    validate_acceptance "${phase_audit}" "${view_audit}" \
+      >> "${RUN_LOG}" 2>&1 || acceptance_exit=$?
+  else
+    acceptance_exit=1
+  fi
 
   local frames bytes
   frames=$(count_frames)
   bytes=$(count_bytes)
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "${key}" "${background}" "${evaluator_exit}" "${phase1_exit}" \
-    "${view_exit}" "${frames}" "${bytes}" >> "${STATUS_FILE}"
-  echo "[ROUTE_END] key=${key} evaluator=${evaluator_exit} phase1=${phase1_exit} views=${view_exit} frames=${frames} bytes=${bytes}" \
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "${key}" "${background}" "${evaluator_exit}" "${geometry_exit}" \
+    "${phase2_exit}" "${view_exit}" "${acceptance_exit}" \
+    "${frames}" "${bytes}" >> "${STATUS_FILE}"
+  echo "[ROUTE_END] key=${key} evaluator=${evaluator_exit} geometry=${geometry_exit} phase2=${phase2_exit} evidence=${view_exit} acceptance=${acceptance_exit} frames=${frames} bytes=${bytes}" \
     >> "${RUN_LOG}"
 
-  if [ "${evaluator_exit}" -ne 0 ] || [ "${phase1_exit}" -ne 0 ] \
-    || [ "${view_exit}" -ne 0 ]; then
+  if [ "${evaluator_exit}" -ne 0 ] || [ "${geometry_exit}" -ne 0 ] \
+    || [ "${phase2_exit}" -ne 0 ] || [ "${view_exit}" -ne 0 ] \
+    || [ "${acceptance_exit}" -ne 0 ]; then
     return 1
   fi
   return 0
 }
 
-echo "[BATCH_START] run_id=${RUN_ID} port2000_pids=$(port_2000_pids)" >> "${RUN_LOG}"
+PORT_2000_BASELINE=$(port_2000_pids)
+echo "[BATCH_START] run_id=${RUN_ID} port2000_pids=${PORT_2000_BASELINE}" >> "${RUN_LOG}"
 if ! start_carla; then
   exit 97
 fi
@@ -321,7 +412,13 @@ done
 
 cleanup
 trap - EXIT INT TERM
-echo "[BATCH_END] exit=${overall_exit} frames=$(count_frames) bytes=$(count_bytes) port2000_pids=$(port_2000_pids)" \
+PORT_2000_FINAL=$(port_2000_pids)
+if [ "${PORT_2000_FINAL}" != "${PORT_2000_BASELINE}" ]; then
+  echo "[PORT_2000_CHANGED] before=${PORT_2000_BASELINE} after=${PORT_2000_FINAL}" \
+    >> "${RUN_LOG}"
+  overall_exit=98
+fi
+echo "[BATCH_END] exit=${overall_exit} frames=$(count_frames) bytes=$(count_bytes) port2000_pids=${PORT_2000_FINAL}" \
   >> "${RUN_LOG}"
 cat "${STATUS_FILE}"
 exit "${overall_exit}"

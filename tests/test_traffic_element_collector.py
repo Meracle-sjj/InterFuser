@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import numpy as np
 
@@ -69,6 +69,8 @@ class TrafficElementCollectorTests(unittest.TestCase):
         collector = object.__new__(collector_module.InterfuserDataCollector)
         collector.step = 0
         collector.save_freq = 10
+        route_marker = SimpleNamespace(name="route-waypoint")
+        collector._traffic_route_waypoints = [route_marker]
         sensor = SimpleNamespace(get_transform=lambda: SimpleNamespace())
         collector.sensor_interface = SimpleNamespace(
             _sensors_objects={
@@ -79,14 +81,17 @@ class TrafficElementCollectorTests(unittest.TestCase):
         )
         world = SimpleNamespace(get_actors=lambda: [])
         phase1 = {
-            "schema_version": 1,
+            "schema_version": 2,
+            "frame_id": "0000",
+            "map_name": "Town01_Opt",
+            "ego": {},
             "traffic_lights": [],
-            "stop_signs": [],
+            "stop_targets": [],
             "errors": [],
         }
         view_record = {
-            "schema_version": 1,
-            "source_traffic_element_schema_version": 1,
+            "schema_version": 3,
+            "source_traffic_element_schema_version": 2,
             "frame_id": "0000",
             "association": {},
             "cameras": {},
@@ -108,7 +113,7 @@ class TrafficElementCollectorTests(unittest.TestCase):
                 collector_module,
                 "collect_traffic_element_labels",
                 return_value=phase1,
-            ), patch.object(
+            ) as collect_labels, patch.object(
                 collector_module,
                 "build_traffic_element_view_record",
                 return_value=view_record,
@@ -145,6 +150,15 @@ class TrafficElementCollectorTests(unittest.TestCase):
                 )
 
             build_views.assert_called_once()
+            collect_labels.assert_called_once_with(
+                ANY,
+                world,
+                frame_id="0000",
+                route_waypoints=[route_marker],
+            )
+            phase_path = collector.save_path / "traffic_elements" / "0000.json"
+            self.assertTrue(phase_path.exists())
+            self.assertFalse(phase_path.with_suffix(".json.tmp").exists())
             final_path = collector.save_path / "traffic_element_views" / "0000.json"
             self.assertTrue(final_path.exists())
             self.assertFalse(final_path.with_suffix(".json.tmp").exists())

@@ -2,13 +2,12 @@
 
 import fnmatch
 import math
-from collections import deque
+
+from leaderboard_stop_targets import build_stop_targets
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DEFAULT_MAX_DISTANCE = 80.0
-DEFAULT_ROUTE_HORIZON = 30.0
-DEFAULT_ROUTE_STEP = 1.0
 
 
 def _location_dict(location):
@@ -61,11 +60,6 @@ def _lane_identity(waypoint):
     )
 
 
-def _waypoint_identity(waypoint):
-    lane = _lane_identity(waypoint)
-    return lane + (round(float(getattr(waypoint, "s", 0.0)), 2),)
-
-
 def _waypoint_metadata(waypoint):
     if waypoint is None:
         return None
@@ -76,43 +70,6 @@ def _waypoint_metadata(waypoint):
         "s": float(getattr(waypoint, "s", 0.0)),
         "lane_width": float(getattr(waypoint, "lane_width", 0.0)),
     }
-
-
-def _stop_line_from_waypoint(waypoint, ego_transform, geometry_source):
-    center = waypoint.transform.location
-    lane_width = float(getattr(waypoint, "lane_width", 0.0))
-    half_width = lane_width / 2.0
-    yaw = math.radians(float(waypoint.transform.rotation.yaw))
-    right_x = -math.sin(yaw)
-    right_y = math.cos(yaw)
-
-    left_endpoint = {
-        "x": float(center.x - right_x * half_width),
-        "y": float(center.y - right_y * half_width),
-        "z": float(center.z),
-    }
-    right_endpoint = {
-        "x": float(center.x + right_x * half_width),
-        "y": float(center.y + right_y * half_width),
-        "z": float(center.z),
-    }
-    relative_center = world_to_ego(center, ego_transform)
-
-    result = _waypoint_metadata(waypoint)
-    result.update(
-        {
-            "geometry_source": geometry_source,
-            "is_exact_carla_stop_position": geometry_source == "carla_stop_waypoint",
-            "center": _location_dict(center),
-            "left_endpoint": left_endpoint,
-            "right_endpoint": right_endpoint,
-            "relative_center": relative_center,
-            "longitudinal_distance": relative_center["forward"],
-            "lateral_offset": relative_center["right"],
-            "ego_before_line": relative_center["forward"] >= 0.0,
-        }
-    )
-    return result
 
 
 def _actor_filter(actors, pattern):
@@ -151,68 +108,9 @@ def _trigger_volume_label(actor, ego_transform):
     }
 
 
-def _point_in_trigger_volume(location, trigger):
-    dx = float(location.x) - trigger["center"]["x"]
-    dy = float(location.y) - trigger["center"]["y"]
-    yaw = math.radians(trigger["rotation"]["yaw"])
-    local_x = dx * math.cos(yaw) + dy * math.sin(yaw)
-    local_y = -dx * math.sin(yaw) + dy * math.cos(yaw)
-    return (
-        abs(local_x) <= trigger["extent"]["x"]
-        and abs(local_y) <= trigger["extent"]["y"]
-    )
-
-
-def _route_entry_stop_line(
-    start_waypoint,
-    trigger,
-    ego_transform,
-    route_horizon,
-    route_step,
-):
-    if start_waypoint is None:
-        return None
-
-    queue = deque([(start_waypoint, 0.0, None)])
-    visited = set()
-    while queue:
-        waypoint, travelled, previous = queue.popleft()
-        identity = _waypoint_identity(waypoint)
-        if identity in visited:
-            continue
-        visited.add(identity)
-
-        if _point_in_trigger_volume(waypoint.transform.location, trigger):
-            stop_waypoint = previous or waypoint
-            return _stop_line_from_waypoint(
-                stop_waypoint,
-                ego_transform,
-                "trigger_volume_route_entry_approximation",
-            )
-
-        if travelled >= route_horizon:
-            continue
-        next_waypoints = waypoint.next(route_step)
-        for next_waypoint in next_waypoints or []:
-            queue.append((next_waypoint, travelled + route_step, waypoint))
-
-    return None
-
-
 def _traffic_light_label(light, ego_transform, ego_lane, active_light_id, errors):
     transform = light.get_transform()
     location = light.get_location()
-    try:
-        stop_waypoints = list(light.get_stop_waypoints())
-    except Exception as exc:
-        stop_waypoints = []
-        errors.append(
-            {
-                "actor_id": int(light.id),
-                "field": "stop_waypoints",
-                "error": str(exc),
-            }
-        )
     try:
         affected_waypoints = list(light.get_affected_lane_waypoints())
     except Exception as exc:
@@ -228,12 +126,9 @@ def _traffic_light_label(light, ego_transform, ego_lane, active_light_id, errors
     affected_lanes = {
         lane for lane in (_lane_identity(item) for item in affected_waypoints) if lane
     }
-    stop_lanes = {
-        lane for lane in (_lane_identity(item) for item in stop_waypoints) if lane
-    }
     is_active = active_light_id == int(light.id)
     controls_ego_lane = is_active or (
-        ego_lane is not None and ego_lane in affected_lanes.union(stop_lanes)
+        ego_lane is not None and ego_lane in affected_lanes
     )
     relative = world_to_ego(location, ego_transform)
 
@@ -259,58 +154,16 @@ def _traffic_light_label(light, ego_transform, ego_lane, active_light_id, errors
         "affected_lanes": [
             _waypoint_metadata(item) for item in affected_waypoints
         ],
-        "stop_lines": [
-            _stop_line_from_waypoint(item, ego_transform, "carla_stop_waypoint")
-            for item in stop_waypoints
-        ],
     }
     return label
-
-
-def _stop_sign_label(
-    stop_sign,
-    ego_transform,
-    start_waypoint,
-    route_horizon,
-    route_step,
-):
-    transform = stop_sign.get_transform()
-    location = stop_sign.get_location()
-    relative = world_to_ego(location, ego_transform)
-    trigger = _trigger_volume_label(stop_sign, ego_transform)
-    stop_line = _route_entry_stop_line(
-        start_waypoint,
-        trigger,
-        ego_transform,
-        route_horizon,
-        route_step,
-    )
-    return {
-        "actor_id": int(stop_sign.id),
-        "type_id": str(stop_sign.type_id),
-        "location": _location_dict(location),
-        "rotation": _rotation_dict(transform.rotation),
-        "relative_position": relative,
-        "relative_heading": _normalize_angle_degrees(
-            float(transform.rotation.yaw) - float(ego_transform.rotation.yaw)
-        ),
-        "distance": math.sqrt(
-            relative["forward"] ** 2
-            + relative["right"] ** 2
-            + relative["up"] ** 2
-        ),
-        "trigger_volume": trigger,
-        "affects_ego_route": stop_line is not None,
-        "stop_lines": [stop_line] if stop_line is not None else [],
-    }
 
 
 def collect_traffic_element_labels(
     hero,
     world,
+    frame_id,
+    route_waypoints,
     max_distance=DEFAULT_MAX_DISTANCE,
-    route_horizon=DEFAULT_ROUTE_HORIZON,
-    route_step=DEFAULT_ROUTE_STEP,
 ):
     """Collect a JSON-serializable traffic-element record for one frame."""
     errors = []
@@ -339,6 +192,7 @@ def collect_traffic_element_labels(
     active_light_id = int(active_light.id) if active_light is not None else None
 
     actors = world.get_actors()
+    light_actors = []
     traffic_lights = []
     for light in _actor_filter(actors, "traffic.traffic_light*"):
         is_active_light = active_light_id == int(light.id)
@@ -357,6 +211,7 @@ def collect_traffic_element_labels(
                     errors,
                 )
             )
+            light_actors.append(light)
         except Exception as exc:
             errors.append(
                 {
@@ -366,36 +221,20 @@ def collect_traffic_element_labels(
                 }
             )
 
-    stop_signs = []
-    stop_sign_actors = (
-        _actor_filter(actors, "traffic.stop*") if ego_waypoint is not None else []
-    )
-    for stop_sign in stop_sign_actors:
-        if ego_location.distance(stop_sign.get_location()) > max_distance:
-            continue
-        try:
-            stop_signs.append(
-                _stop_sign_label(
-                    stop_sign,
-                    ego_transform,
-                    ego_waypoint,
-                    route_horizon,
-                    route_step,
-                )
-            )
-        except Exception as exc:
-            errors.append(
-                {
-                    "actor_id": int(stop_sign.id),
-                    "field": "stop_sign",
-                    "error": str(exc),
-                }
-            )
-
     traffic_lights.sort(key=lambda item: item["actor_id"])
-    stop_signs.sort(key=lambda item: item["actor_id"])
+    map_name = str(world_map.name).split("/")[-1]
+    stop_targets = build_stop_targets(
+        light_actors,
+        world_map,
+        route_waypoints,
+        ego_transform,
+        hero.bounding_box,
+        map_name,
+    )
     return {
         "schema_version": SCHEMA_VERSION,
+        "frame_id": str(frame_id),
+        "map_name": map_name,
         "ego": {
             "actor_id": int(hero.id),
             "location": _location_dict(ego_location),
@@ -404,7 +243,7 @@ def collect_traffic_element_labels(
         },
         "active_traffic_light_id": active_light_id,
         "traffic_lights": traffic_lights,
-        "stop_signs": stop_signs,
+        "stop_targets": stop_targets,
         "errors": errors,
     }
 
@@ -415,9 +254,6 @@ def legacy_affordances_from_labels(labels):
     ]
     return {
         "traffic_light": active_lights[0]["state"] if active_lights else None,
-        "stop_sign": any(
-            item["affects_ego_route"] for item in labels["stop_signs"]
-        ),
     }
 
 
@@ -434,10 +270,16 @@ def validate_traffic_element_record(record):
     errors = []
     if record.get("schema_version") != SCHEMA_VERSION:
         errors.append("unsupported schema_version")
+    if not isinstance(record.get("frame_id"), str):
+        errors.append("frame_id must be a string")
+    if not isinstance(record.get("map_name"), str):
+        errors.append("map_name must be a string")
     if not isinstance(record.get("traffic_lights"), list):
         errors.append("traffic_lights must be a list")
-    if not isinstance(record.get("stop_signs"), list):
-        errors.append("stop_signs must be a list")
+    if not isinstance(record.get("stop_targets"), list):
+        errors.append("stop_targets must be a list")
+    if "stop_signs" in record:
+        errors.append("stop_signs is forbidden")
     if not isinstance(record.get("errors"), list):
         errors.append("errors must be a list")
     if not isinstance(record.get("ego"), dict):

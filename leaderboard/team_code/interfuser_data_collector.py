@@ -29,6 +29,15 @@ from traffic_element_labels import (
 from traffic_element_projection import build_traffic_element_view_record
 
 
+AGENT_OPTIONS = {
+    "base_tlight_threshold": 3.0,
+    "base_vehicle_threshold": 8.0,
+    "base_min_distance": 3.0,
+    "max_brake": 0.8,
+    "ignore_stop_signs": True,
+}
+
+
 def get_entry_point():
     return 'InterfuserDataCollector'
 
@@ -43,6 +52,7 @@ class InterfuserDataCollector(AutonomousAgent):
         self.track = Track.SENSORS
         self._agent = None
         self._route_assigned = False
+        self._traffic_route_waypoints = []
         
         # Data saving setup
         self.step = 0
@@ -144,6 +154,7 @@ class InterfuserDataCollector(AutonomousAgent):
     def set_global_plan(self, global_plan_gps, global_plan_world_coord):
         """Called at the beginning of each new route"""
         super().set_global_plan(global_plan_gps, global_plan_world_coord)
+        self._traffic_route_waypoints = []
         
         # Create a new directory for this route
         if self.base_save_path:
@@ -179,21 +190,24 @@ class InterfuserDataCollector(AutonomousAgent):
                     self._agent = BehaviorAgent(
                         hero_actor,
                         behavior='normal',
-                        opt_dict={
-                            'base_tlight_threshold': 3.0,    # 红绿灯停车距离: 3米 (更接近!)
-                            'base_vehicle_threshold': 8.0,   # 车辆避障距离: 8米
-                            'base_min_distance': 3.0,        # 最小跟车距离: 3米
-                            'max_brake': 0.8,                # 增加刹车力度以便更近距离停车
-                        }
+                        opt_dict=dict(AGENT_OPTIONS),
                     )
                     print(f"[InterfuserDataCollector] Using BehaviorAgent with tlight_threshold=3.0m")
                 else:
-                    self._agent = BasicAgent(hero_actor, target_speed=20)
+                    self._agent = BasicAgent(
+                        hero_actor,
+                        target_speed=20,
+                        opt_dict=dict(AGENT_OPTIONS),
+                    )
                     print(f"[InterfuserDataCollector] Using BasicAgent (BehaviorAgent not available)")
                 
                 if hasattr(self, '_global_plan_world_coord') and self._global_plan_world_coord:
                     destination = self._global_plan_world_coord[-1][0].location
                     self._agent.set_destination(destination)
+                    self._traffic_route_waypoints = [
+                        waypoint
+                        for waypoint, _road_option in self._agent.get_local_planner().get_plan()
+                    ]
                     self._route_assigned = True
                     self._just_initialized = True  # 标记刚刚初始化，需要跳过第一帧
                     print(f"[InterfuserDataCollector] Route assigned, destination: {destination}")
@@ -241,12 +255,17 @@ class InterfuserDataCollector(AutonomousAgent):
         world = CarlaDataProvider.get_world()
         if not hero or not world:
             return
-        traffic_elements = collect_traffic_element_labels(hero, world)
+        frame_id = f"{frame:04d}"
+        traffic_elements = collect_traffic_element_labels(
+            hero,
+            world,
+            frame_id=frame_id,
+            route_waypoints=self._traffic_route_waypoints,
+        )
         camera_frames = self._get_traffic_element_camera_frames(input_data)
         relevant_actor_ids = {
             int(item["actor_id"])
-            for key in ("traffic_lights", "stop_signs")
-            for item in traffic_elements[key]
+            for item in traffic_elements["traffic_lights"]
         }
         actors_by_id = {
             int(actor.id): actor
@@ -254,7 +273,7 @@ class InterfuserDataCollector(AutonomousAgent):
             if int(actor.id) in relevant_actor_ids
         }
         traffic_element_views = build_traffic_element_view_record(
-            frame_id=f"{frame:04d}",
+            frame_id=frame_id,
             traffic_elements=traffic_elements,
             actors_by_id=actors_by_id,
             camera_frames=camera_frames,
@@ -283,8 +302,10 @@ class InterfuserDataCollector(AutonomousAgent):
             lidar_data = input_data['lidar'][1]
             np.save(self.save_path / 'lidar' / f"{frame:04d}.npy", lidar_data)
         
-        with open(self.save_path / 'traffic_elements' / f"{frame:04d}.json", 'w') as f:
-            json.dump(traffic_elements, f, indent=2)
+        self._write_json_atomic(
+            self.save_path / 'traffic_elements' / f"{frame:04d}.json",
+            traffic_elements,
+        )
         self._write_json_atomic(
             self.save_path / 'traffic_element_views' / f"{frame:04d}.json",
             traffic_element_views,
@@ -465,7 +486,13 @@ class InterfuserDataCollector(AutonomousAgent):
         }
 
         if traffic_elements is None:
-            traffic_elements = collect_traffic_element_labels(hero, world)
+            frame = self.step // self.save_freq
+            traffic_elements = collect_traffic_element_labels(
+                hero,
+                world,
+                frame_id=f"{frame:04d}",
+                route_waypoints=self._traffic_route_waypoints,
+            )
         
         # Check for nearby hazards
         hero_loc = hero.get_location()

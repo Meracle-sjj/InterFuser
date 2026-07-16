@@ -1,4 +1,5 @@
 import fnmatch
+import json
 import math
 import unittest
 
@@ -6,6 +7,7 @@ from team_code.traffic_element_labels import (
     collect_traffic_element_labels,
     legacy_affordances_from_labels,
     merge_legacy_affordances,
+    validate_traffic_element_record,
     world_to_ego,
 )
 
@@ -39,8 +41,12 @@ class FakeTransform:
     def transform(self, location):
         yaw = math.radians(self.rotation.yaw)
         return FakeLocation(
-            self.location.x + location.x * math.cos(yaw) - location.y * math.sin(yaw),
-            self.location.y + location.x * math.sin(yaw) + location.y * math.cos(yaw),
+            self.location.x
+            + location.x * math.cos(yaw)
+            - location.y * math.sin(yaw),
+            self.location.y
+            + location.x * math.sin(yaw)
+            + location.y * math.cos(yaw),
             self.location.z + location.z,
         )
 
@@ -52,61 +58,58 @@ class FakeExtent:
         self.z = z
 
 
-class FakeTriggerVolume:
-    def __init__(self, location=None, extent=None, yaw=0.0):
-        self.location = location or FakeLocation()
-        self.extent = extent or FakeExtent()
-        self.rotation = FakeRotation(yaw=yaw)
+class FakeBoundingBox:
+    def __init__(self, location_x=0.0, extent_x=2.0):
+        self.location = FakeLocation(x=location_x)
+        self.extent = FakeExtent(x=extent_x)
+
+
+class FakeTrigger:
+    def __init__(self, extent_x=0.1):
+        self.location = FakeLocation()
+        self.extent = FakeExtent(extent_x, 1.0, 2.0)
+        self.rotation = FakeRotation()
 
 
 class FakeWaypoint:
-    def __init__(
-        self,
-        road_id,
-        lane_id,
-        x,
-        y,
-        yaw=0.0,
-        lane_width=4.0,
-        section_id=0,
-        s=0.0,
-    ):
-        self.road_id = road_id
-        self.lane_id = lane_id
-        self.section_id = section_id
-        self.s = s
-        self.lane_width = lane_width
-        self.transform = FakeTransform(FakeLocation(x, y, 0.0), yaw=yaw)
-        self._next = []
+    def __init__(self, x, is_intersection=False):
+        self.road_id = 7
+        self.section_id = 0
+        self.lane_id = -1
+        self.s = float(x)
+        self.lane_width = 4.0
+        self.is_intersection = is_intersection
+        self.is_junction = is_intersection
+        self.transform = FakeTransform(FakeLocation(x, 0.0, 0.0))
+        self.successors = []
 
     def next(self, distance):
-        return list(self._next)
+        return list(self.successors)
 
 
-class BrokenNextWaypoint(FakeWaypoint):
-    def next(self, distance):
-        raise RuntimeError("waypoint traversal failed")
-
-
-def linked_waypoints(xs, road_id=7, lane_id=-1):
-    waypoints = [
-        FakeWaypoint(road_id, lane_id, x, 0.0, s=float(index))
-        for index, x in enumerate(xs)
+def dense_route(start=0.0, end=30.0, step=0.5):
+    count = int(round((end - start) / step))
+    route = [
+        FakeWaypoint(
+            start + index * step,
+            is_intersection=start + index * step >= 20.0,
+        )
+        for index in range(count + 1)
     ]
-    for current, following in zip(waypoints, waypoints[1:]):
-        current._next = [following]
-    return waypoints[0]
+    for current, following in zip(route, route[1:]):
+        current.successors = [following]
+    return route
 
 
 class FakeTrafficLight:
     type_id = "traffic.traffic_light"
 
-    def __init__(self, actor_id, state, stop_waypoints, x=15.0, y=0.0):
+    def __init__(self, actor_id=11, state="Red", x=10.0, affected=None):
         self.id = actor_id
         self.state = state
-        self._stop_waypoints = stop_waypoints
-        self._transform = FakeTransform(FakeLocation(x, y, 0.0), yaw=0.0)
-        self.trigger_volume = FakeTriggerVolume()
+        self._transform = FakeTransform(FakeLocation(x, 0.0, 0.0))
+        self.trigger_volume = FakeTrigger()
+        self._affected = list(affected or [])
 
     def get_location(self):
         return self._transform.location
@@ -114,50 +117,51 @@ class FakeTrafficLight:
     def get_transform(self):
         return self._transform
 
-    def get_stop_waypoints(self):
-        return list(self._stop_waypoints)
-
     def get_affected_lane_waypoints(self):
-        return list(self._stop_waypoints)
+        return list(self._affected)
 
 
 class FakeStopSign:
     type_id = "traffic.stop"
 
-    def __init__(self, actor_id, trigger_center, trigger_extent):
+    def __init__(self, actor_id=21):
         self.id = actor_id
-        self._transform = FakeTransform(FakeLocation(), yaw=0.0)
-        self.trigger_volume = FakeTriggerVolume(
-            location=trigger_center,
-            extent=FakeExtent(trigger_extent[0], trigger_extent[1], 2.0),
-        )
-
-    def get_location(self):
-        return self._transform.transform(self.trigger_volume.location)
-
-    def get_transform(self):
-        return self._transform
 
 
-class FakeActorList(list):
+class RecordingActorList(list):
+    def __init__(self, values):
+        super().__init__(values)
+        self.filter_patterns = []
+
     def filter(self, pattern):
-        return FakeActorList(
-            actor for actor in self if fnmatch.fnmatch(actor.type_id, pattern)
+        self.filter_patterns.append(pattern)
+        return RecordingActorList(
+            actor
+            for actor in self
+            if fnmatch.fnmatch(str(getattr(actor, "type_id", "")), pattern)
         )
 
 
 class FakeMap:
-    def __init__(self, hero_waypoint):
-        self.hero_waypoint = hero_waypoint
+    name = "Carla/Maps/Town01_Opt"
 
-    def get_waypoint(self, location, *args, **kwargs):
-        return self.hero_waypoint
+    def __init__(self, route, missing_ego=False):
+        self.route = list(route)
+        self.missing_ego = missing_ego
+
+    def get_waypoint(self, location):
+        if self.missing_ego and abs(location.x) < 1e-6:
+            return None
+        return min(
+            self.route,
+            key=lambda waypoint: waypoint.transform.location.distance(location),
+        )
 
 
 class FakeWorld:
-    def __init__(self, actors, hero_waypoint):
-        self._actors = FakeActorList(actors)
-        self._map = FakeMap(hero_waypoint)
+    def __init__(self, actors, route, missing_ego=False):
+        self._actors = actors
+        self._map = FakeMap(route, missing_ego=missing_ego)
 
     def get_actors(self):
         return self._actors
@@ -168,11 +172,11 @@ class FakeWorld:
 
 class FakeHero:
     id = 1
-    type_id = "vehicle.ego"
 
-    def __init__(self, active_light=None, x=0.0, y=0.0, yaw=0.0):
+    def __init__(self, active_light=None, x=0.0, yaw=0.0):
         self._active_light = active_light
-        self._transform = FakeTransform(FakeLocation(x, y, 0.0), yaw=yaw)
+        self._transform = FakeTransform(FakeLocation(x, 0.0, 0.0), yaw=yaw)
+        self.bounding_box = FakeBoundingBox(location_x=0.2, extent_x=2.0)
 
     def get_location(self):
         return self._transform.location
@@ -182,9 +186,6 @@ class FakeHero:
 
     def get_traffic_light(self):
         return self._active_light
-
-    def is_at_traffic_light(self):
-        return self._active_light is not None
 
 
 class TrafficElementLabelTests(unittest.TestCase):
@@ -197,67 +198,49 @@ class TrafficElementLabelTests(unittest.TestCase):
         self.assertAlmostEqual(relative["right"], 0.0)
         self.assertAlmostEqual(relative["up"], 1.0)
 
-    def test_active_light_emits_exact_carla_stop_waypoint_geometry(self):
-        stop_waypoint = FakeWaypoint(
-            road_id=3,
-            lane_id=-1,
-            x=12.0,
-            y=0.0,
-            yaw=0.0,
-            lane_width=4.0,
-        )
-        light = FakeTrafficLight(11, "Red", [stop_waypoint])
-        hero = FakeHero(active_light=light)
-        world = FakeWorld(
-            [light],
-            hero_waypoint=FakeWaypoint(3, -1, 0.0, 0.0),
+    def test_v2_record_contains_route_stop_target_without_stop_sign_schema(self):
+        route = dense_route()
+        light = FakeTrafficLight(affected=[route[20]])
+        record = collect_traffic_element_labels(
+            FakeHero(active_light=light),
+            FakeWorld(RecordingActorList([light]), route),
+            frame_id="0042",
+            route_waypoints=route,
         )
 
-        labels = collect_traffic_element_labels(hero, world)
-
-        item = labels["traffic_lights"][0]
-        stop_line = item["stop_lines"][0]
-        self.assertTrue(item["is_active_for_ego"])
-        self.assertTrue(item["controls_ego_lane"])
-        self.assertEqual(stop_line["geometry_source"], "carla_stop_waypoint")
-        self.assertAlmostEqual(stop_line["longitudinal_distance"], 12.0)
-        self.assertAlmostEqual(stop_line["left_endpoint"]["y"], -2.0)
-        self.assertAlmostEqual(stop_line["right_endpoint"]["y"], 2.0)
-
-    def test_stop_sign_route_trigger_intersection_sets_legacy_affordance(self):
-        stop = FakeStopSign(
-            actor_id=21,
-            trigger_center=FakeLocation(8.0, 0.0),
-            trigger_extent=(2.0, 2.0),
-        )
-        hero = FakeHero(active_light=None)
-        world = FakeWorld(
-            [stop],
-            hero_waypoint=linked_waypoints([0.0, 4.0, 7.0, 9.0]),
-        )
-
-        labels = collect_traffic_element_labels(hero, world)
-        affordances = legacy_affordances_from_labels(labels)
-
-        item = labels["stop_signs"][0]
-        self.assertTrue(item["affects_ego_route"])
+        self.assertEqual(record["schema_version"], 2)
+        self.assertEqual(record["frame_id"], "0042")
+        self.assertEqual(record["map_name"], "Town01_Opt")
+        self.assertEqual(len(record["stop_targets"]), 1)
+        self.assertNotIn("stop_signs", record)
+        self.assertNotIn("stop_lines", record["traffic_lights"][0])
         self.assertEqual(
-            item["stop_lines"][0]["geometry_source"],
-            "trigger_volume_route_entry_approximation",
+            record["stop_targets"][0]["geometry_source"],
+            "scenario_runner_running_red_light_test_v1",
         )
-        self.assertAlmostEqual(
-            item["stop_lines"][0]["longitudinal_distance"],
-            4.0,
-        )
-        self.assertTrue(affordances["stop_sign"])
 
-    def test_merge_legacy_affordances_preserves_other_hazards(self):
+    def test_traffic_stop_actor_is_never_queried_or_serialized(self):
+        route = dense_route()
+        actors = RecordingActorList(
+            [FakeStopSign(), FakeTrafficLight(state="Green", x=120.0)]
+        )
+        record = collect_traffic_element_labels(
+            FakeHero(),
+            FakeWorld(actors, route),
+            frame_id="0000",
+            route_waypoints=route,
+        )
+
+        self.assertNotIn("traffic.stop*", actors.filter_patterns)
+        self.assertNotIn("stop_signs", record)
+        serialized = json.dumps(record).lower()
+        self.assertNotIn("traffic.stop", serialized)
+        self.assertNotIn("trigger_volume_route_entry_approximation", serialized)
+
+    def test_merge_legacy_affordances_preserves_hazards_without_stop_sign(self):
         labels = {
             "traffic_lights": [
                 {"is_active_for_ego": True, "state": "Red"},
-            ],
-            "stop_signs": [
-                {"affects_ego_route": True},
             ],
         }
 
@@ -270,60 +253,61 @@ class TrafficElementLabelTests(unittest.TestCase):
             merged,
             {
                 "traffic_light": "Red",
-                "stop_sign": True,
                 "hazard_vehicle": True,
                 "hazard_pedestrian": False,
             },
         )
+        self.assertNotIn("stop_sign", merged)
 
-    def test_stop_sign_traversal_error_does_not_create_negative_label(self):
-        stop = FakeStopSign(
-            actor_id=21,
-            trigger_center=FakeLocation(8.0, 0.0),
-            trigger_extent=(2.0, 2.0),
-        )
-        hero = FakeHero(active_light=None)
-        world = FakeWorld(
-            [stop],
-            hero_waypoint=BrokenNextWaypoint(7, -1, 0.0, 0.0),
+    def test_no_active_light_affordance_is_none_without_stop_field(self):
+        self.assertEqual(
+            legacy_affordances_from_labels({"traffic_lights": []}),
+            {"traffic_light": None},
         )
 
-        labels = collect_traffic_element_labels(hero, world)
-
-        self.assertEqual(labels["stop_signs"], [])
-        self.assertEqual(labels["errors"][0]["field"], "stop_sign")
-        self.assertIn("waypoint traversal failed", labels["errors"][0]["error"])
-
-    def test_missing_ego_waypoint_does_not_create_stop_sign_negative_label(self):
-        stop = FakeStopSign(
-            actor_id=21,
-            trigger_center=FakeLocation(8.0, 0.0),
-            trigger_extent=(2.0, 2.0),
-        )
-        labels = collect_traffic_element_labels(
-            FakeHero(active_light=None),
-            FakeWorld([stop], hero_waypoint=None),
+    def test_missing_ego_waypoint_keeps_frame_unknown_without_stop_negative(self):
+        route = dense_route()
+        record = collect_traffic_element_labels(
+            FakeHero(),
+            FakeWorld(RecordingActorList([]), route, missing_ego=True),
+            frame_id="0000",
+            route_waypoints=route,
         )
 
-        self.assertEqual(labels["stop_signs"], [])
-        self.assertEqual(labels["errors"][0]["field"], "ego_waypoint")
+        self.assertIsNone(record["ego"]["lane"])
+        self.assertEqual(record["stop_targets"], [])
+        self.assertEqual(record["errors"][0]["field"], "ego_waypoint")
 
     def test_active_light_is_retained_outside_nearby_actor_radius(self):
-        light = FakeTrafficLight(
-            actor_id=11,
-            state="Red",
-            stop_waypoints=[FakeWaypoint(3, -1, 12.0, 0.0)],
-            x=120.0,
-        )
-        labels = collect_traffic_element_labels(
+        route = dense_route()
+        light = FakeTrafficLight(actor_id=11, state="Red", x=120.0)
+        record = collect_traffic_element_labels(
             FakeHero(active_light=light),
-            FakeWorld([light], hero_waypoint=FakeWaypoint(3, -1, 0.0, 0.0)),
+            FakeWorld(RecordingActorList([light]), route),
+            frame_id="0000",
+            route_waypoints=route,
             max_distance=10.0,
         )
 
-        self.assertEqual(labels["active_traffic_light_id"], 11)
-        self.assertEqual(len(labels["traffic_lights"]), 1)
-        self.assertTrue(labels["traffic_lights"][0]["is_active_for_ego"])
+        self.assertEqual(record["active_traffic_light_id"], 11)
+        self.assertEqual(len(record["traffic_lights"]), 1)
+        self.assertTrue(record["traffic_lights"][0]["is_active_for_ego"])
+
+    def test_validator_rejects_legacy_stop_sign_field(self):
+        record = {
+            "schema_version": 2,
+            "frame_id": "0000",
+            "map_name": "Town01_Opt",
+            "ego": {},
+            "traffic_lights": [],
+            "stop_targets": [],
+            "errors": [],
+            "stop_signs": [],
+        }
+
+        errors = validate_traffic_element_record(record)
+
+        self.assertIn("stop_signs is forbidden", errors)
 
 
 if __name__ == "__main__":

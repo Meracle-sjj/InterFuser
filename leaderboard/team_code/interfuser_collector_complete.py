@@ -11,7 +11,10 @@ import carla
 
 # Import base collector
 sys.path.insert(0, os.path.dirname(__file__))
-from interfuser_data_collector import InterfuserDataCollector as BaseCollector
+try:
+    from .interfuser_data_collector import InterfuserDataCollector as BaseCollector
+except ImportError:
+    from interfuser_data_collector import InterfuserDataCollector as BaseCollector
 
 
 def get_entry_point():
@@ -52,7 +55,6 @@ class InterfuserCollectorComplete(BaseCollector):
         vehicles = actors.filter('vehicle.*')
         walkers = actors.filter('walker.*')
         traffic_lights = actors.filter('traffic.traffic_light*')
-        stop_signs = actors.filter('traffic.stop*')
         
         # ========== 3. Vehicle detection ==========
         is_vehicle_present = []
@@ -155,25 +157,7 @@ class InterfuserCollectorComplete(BaseCollector):
         measurements['is_red_light_present'] = is_red_light_present
         measurements['affected_light_id'] = affected_light_id
         
-        # ========== 6. Stop sign detection ==========
-        is_stop_sign_present = []
-        
-        for stop_sign in stop_signs:
-            ss_loc = stop_sign.get_location()
-            distance = hero_loc.distance(ss_loc)
-            
-            if distance < 15:  # Within 15 meters
-                # Check if in front
-                to_ss = ss_loc - hero_loc
-                forward_dot = (to_ss.x * hero_forward.x + 
-                              to_ss.y * hero_forward.y)
-                
-                if forward_dot > 0:
-                    is_stop_sign_present.append(stop_sign.id)
-        
-        measurements['is_stop_sign_present'] = is_stop_sign_present
-        
-        # ========== 7. Behavior hints ==========
+        # ========== 6. Behavior hints ==========
         should_brake = 0
         should_slow = 0
         
@@ -182,8 +166,6 @@ class InterfuserCollectorComplete(BaseCollector):
         # - Vehicle very close in lane
         # - Pedestrian crossing
         if len(is_red_light_present) > 0:
-            should_brake = 1
-        elif len(is_stop_sign_present) > 0:
             should_brake = 1
         elif len(is_lane_vehicle_present) > 0:
             should_brake = 1
@@ -200,7 +182,7 @@ class InterfuserCollectorComplete(BaseCollector):
         measurements['should_brake'] = should_brake
         measurements['should_slow'] = should_slow
         
-        # ========== 8. Future waypoints ==========
+        # ========== 7. Future waypoints ==========
         future_waypoints = []
         try:
             current_waypoint = waypoint
@@ -217,8 +199,8 @@ class InterfuserCollectorComplete(BaseCollector):
         
         measurements['future_waypoints'] = future_waypoints
         
-        # ========== 9. Near/Far nodes (for compatibility) ==========
-        if self._agent and hasattr(self._agent, 'get_local_planner'):
+        # ========== 8. Near/Far nodes (for compatibility) ==========
+        if getattr(self, '_agent', None) and hasattr(self._agent, 'get_local_planner'):
             local_planner = self._agent.get_local_planner()
             if local_planner:
                 try:

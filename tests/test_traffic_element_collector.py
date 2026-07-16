@@ -157,6 +157,11 @@ class TrafficElementCollectorTests(unittest.TestCase):
                 )
 
             build_views.assert_called_once()
+            camera_frames = build_views.call_args.kwargs["camera_frames"]
+            np.testing.assert_array_equal(
+                camera_frames["front"]["rgb"],
+                input_data["rgb_front"][1][:, :, :3],
+            )
             lidar_frame = build_views.call_args.kwargs["lidar_frame"]
             self.assertIs(lidar_frame["transform"], lidar_transform)
             self.assertIs(lidar_frame["ego_transform"], ego_transform)

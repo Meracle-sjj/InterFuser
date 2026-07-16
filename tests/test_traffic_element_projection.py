@@ -2,7 +2,9 @@ import copy
 import json
 import math
 import unittest
+from unittest.mock import patch
 
+import cv2
 import numpy as np
 
 from team_code.traffic_element_projection import (
@@ -14,6 +16,7 @@ from team_code.traffic_element_projection import (
     camera_intrinsics,
     clip_image_segment,
     decode_carla_depth,
+    find_painted_line_candidate,
     project_camera_points,
     projected_roi,
     transform_matrix,
@@ -137,6 +140,7 @@ def _camera_frame():
     depth[3:6, 4:8] = 20.0
     return {
         "transform": FakeTransform(),
+        "rgb": np.zeros((10, 12, 3), dtype=np.uint8),
         "semantic": semantic,
         "depth_m": depth,
         "width": 12,
@@ -341,6 +345,70 @@ class AssociationTests(unittest.TestCase):
             self.assertTrue(0.0 <= point[1] <= 299.0)
 
 
+class PaintedLineCandidateTests(unittest.TestCase):
+    corridor = [[20, 50], [180, 50], [180, 100], [20, 100]]
+    boundary = [[30, 80], [170, 80]]
+
+    def test_transverse_line_is_candidate_not_verified(self):
+        rgb = np.zeros((120, 200, 3), dtype=np.uint8)
+        cv2.line(rgb, (40, 80), (160, 80), (255, 255, 255), 4)
+
+        result = find_painted_line_candidate(
+            rgb,
+            np.full((120, 200), 12.0),
+            corridor_polygon=self.corridor,
+            expected_boundary_segment=self.boundary,
+            expected_depth_m=12.0,
+        )
+
+        self.assertEqual(result["status"], "candidate")
+        self.assertNotEqual(result["status"], "verified")
+        self.assertLessEqual(result["angle_error_degrees"], 15.0)
+        self.assertLessEqual(result["median_depth_residual_m"], 2.0)
+
+    def test_blank_corridor_remains_unknown(self):
+        result = find_painted_line_candidate(
+            np.zeros((120, 200, 3), dtype=np.uint8),
+            np.full((120, 200), 12.0),
+            self.corridor,
+            self.boundary,
+            12.0,
+        )
+
+        self.assertEqual(
+            result,
+            {"status": "unknown", "image_segment": None, "score": None},
+        )
+
+    def test_parallel_lane_marking_is_rejected(self):
+        rgb = np.zeros((120, 200, 3), dtype=np.uint8)
+        cv2.line(rgb, (100, 55), (100, 98), (255, 255, 255), 4)
+
+        result = find_painted_line_candidate(
+            rgb,
+            np.full((120, 200), 12.0),
+            self.corridor,
+            self.boundary,
+            12.0,
+        )
+
+        self.assertEqual(result["status"], "unknown")
+
+    def test_depth_inconsistent_line_is_rejected(self):
+        rgb = np.zeros((120, 200, 3), dtype=np.uint8)
+        cv2.line(rgb, (40, 80), (160, 80), (255, 255, 255), 4)
+
+        result = find_painted_line_candidate(
+            rgb,
+            np.full((120, 200), 30.0),
+            self.corridor,
+            self.boundary,
+            12.0,
+        )
+
+        self.assertEqual(result["status"], "unknown")
+
+
 class EvidenceSchemaV3Tests(unittest.TestCase):
     def setUp(self):
         self.vertices = [
@@ -422,6 +490,21 @@ class EvidenceSchemaV3Tests(unittest.TestCase):
         )
         self.assertGreaterEqual(len(target["corridor"]["image_polyline"]), 2)
         self.assertGreaterEqual(len(target["corridor"]["image_envelope"]), 4)
+
+    def test_projected_target_runs_review_only_candidate_extraction(self):
+        candidate = {
+            "status": "candidate",
+            "image_segment": [[4, 5], [8, 5]],
+            "score": 0.8,
+        }
+        with patch(
+            "team_code.traffic_element_projection.find_painted_line_candidate",
+            return_value=candidate,
+        ) as find_candidate:
+            target = self._build_view()["cameras"]["front"]["stop_targets"][0]
+
+        self.assertIs(target["painted_line"], candidate)
+        find_candidate.assert_called_once()
 
     def test_camera_depth_support_is_counted_per_corridor_sample(self):
         camera = _camera_frame()

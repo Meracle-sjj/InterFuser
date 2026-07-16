@@ -348,6 +348,7 @@ class InterfuserDataCollector(AutonomousAgent):
         frames = {}
         sensor_objects = getattr(self.sensor_interface, "_sensors_objects", {})
         for position in ("front", "left", "right"):
+            rgb_id = f"rgb_{position}"
             seg_id = f"seg_{position}"
             depth_id = f"depth_{position}"
             sensor = sensor_objects.get(seg_id)
@@ -365,6 +366,11 @@ class InterfuserDataCollector(AutonomousAgent):
             semantic = input_data[seg_id][1][:, :, 2]
             frames[position] = {
                 "transform": sensor.get_transform(),
+                "rgb": (
+                    input_data[rgb_id][1][:, :, :3]
+                    if rgb_id in input_data
+                    else None
+                ),
                 "semantic": semantic,
                 "depth_raw": input_data[depth_id][1][:, :, :3],
                 "width": int(semantic.shape[1]),

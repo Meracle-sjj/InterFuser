@@ -2,6 +2,7 @@
 
 import math
 
+import cv2
 import numpy as np
 
 
@@ -119,6 +120,148 @@ def decode_carla_depth(raw_bgr):
         np.array([65536.0, 256.0, 1.0], dtype=np.float64),
     )
     return 1000.0 * normalized / (256.0**3 - 1.0)
+
+
+def _undirected_angle_degrees(segment):
+    (x1, y1), (x2, y2) = segment
+    return math.degrees(math.atan2(float(y2) - y1, float(x2) - x1)) % 180.0
+
+
+def _undirected_angle_error(first, second):
+    difference = abs(float(first) - float(second)) % 180.0
+    return min(difference, 180.0 - difference)
+
+
+def _sample_segment_pixels(segment, width, height):
+    (x1, y1), (x2, y2) = segment
+    length = math.hypot(float(x2) - x1, float(y2) - y1)
+    sample_count = max(2, int(math.ceil(length)) + 1)
+    xs = np.rint(np.linspace(x1, x2, sample_count)).astype(np.int64)
+    ys = np.rint(np.linspace(y1, y2, sample_count)).astype(np.int64)
+    valid = (xs >= 0) & (xs < int(width)) & (ys >= 0) & (ys < int(height))
+    return xs[valid], ys[valid]
+
+
+def find_painted_line_candidate(
+    rgb,
+    depth_m,
+    corridor_polygon,
+    expected_boundary_segment,
+    expected_depth_m,
+    semantic=None,
+):
+    """Return a review-only transverse painted-line candidate."""
+    unknown = {"status": "unknown", "image_segment": None, "score": None}
+    try:
+        image = np.asarray(rgb)
+        depth = np.asarray(depth_m, dtype=np.float64)
+        polygon = np.asarray(corridor_polygon, dtype=np.float64)
+        boundary = np.asarray(expected_boundary_segment, dtype=np.float64)
+        if image.ndim != 3 or image.shape[2] < 3:
+            return unknown
+        height, width = image.shape[:2]
+        if depth.shape != (height, width):
+            return unknown
+        if polygon.ndim != 2 or polygon.shape[0] < 3 or polygon.shape[1] != 2:
+            return unknown
+        if boundary.shape != (2, 2) or not np.isfinite(boundary).all():
+            return unknown
+        if not math.isfinite(float(expected_depth_m)):
+            return unknown
+
+        boundary_length = float(np.linalg.norm(boundary[1] - boundary[0]))
+        if boundary_length <= 1e-6:
+            return unknown
+        expected_angle = _undirected_angle_degrees(boundary)
+
+        gray = cv2.cvtColor(image[..., :3].astype(np.uint8), cv2.COLOR_BGR2GRAY)
+        edges = cv2.Canny(gray, 60, 180)
+        corridor_mask = np.zeros((height, width), dtype=np.uint8)
+        polygon_pixels = np.rint(polygon).astype(np.int32)
+        cv2.fillPoly(corridor_mask, [polygon_pixels], 255)
+        edges = cv2.bitwise_and(edges, corridor_mask)
+        lines = cv2.HoughLinesP(
+            edges,
+            1,
+            np.pi / 180.0,
+            threshold=20,
+            minLineLength=12,
+            maxLineGap=6,
+        )
+        if lines is None:
+            return unknown
+
+        semantic_array = None if semantic is None else np.asarray(semantic)
+        if semantic_array is not None and semantic_array.shape != (height, width):
+            semantic_array = None
+        candidates = []
+        for raw_line in lines[:, 0, :]:
+            segment = np.asarray(
+                [[raw_line[0], raw_line[1]], [raw_line[2], raw_line[3]]],
+                dtype=np.float64,
+            )
+            length = float(np.linalg.norm(segment[1] - segment[0]))
+            if length < 0.25 * boundary_length:
+                continue
+            angle_error = _undirected_angle_error(
+                _undirected_angle_degrees(segment),
+                expected_angle,
+            )
+            if angle_error > 15.0:
+                continue
+
+            xs, ys = _sample_segment_pixels(segment, width, height)
+            if not len(xs):
+                continue
+            depths = depth[ys, xs]
+            finite = np.isfinite(depths)
+            if not bool(np.any(finite)):
+                continue
+            residual = float(
+                np.median(np.abs(depths[finite] - float(expected_depth_m)))
+            )
+            if residual > 2.0:
+                continue
+
+            line_mask = np.zeros((height, width), dtype=np.uint8)
+            cv2.line(
+                line_mask,
+                tuple(np.rint(segment[0]).astype(int)),
+                tuple(np.rint(segment[1]).astype(int)),
+                255,
+                3,
+            )
+            line_pixels = line_mask > 0
+            road_line_count = 0
+            road_line_fraction = None
+            if semantic_array is not None:
+                road_line_count = int(
+                    np.count_nonzero(
+                        line_pixels
+                        & (semantic_array == int(EVIDENCE["road_lines_semantic_tag"]))
+                    )
+                )
+                total = int(np.count_nonzero(line_pixels))
+                road_line_fraction = (
+                    float(road_line_count) / total if total else 0.0
+                )
+
+            score = length / boundary_length - residual / 2.0
+            candidates.append(
+                {
+                    "status": "candidate",
+                    "image_segment": segment.tolist(),
+                    "score": float(score),
+                    "angle_error_degrees": float(angle_error),
+                    "median_depth_residual_m": residual,
+                    "road_lines_semantic_pixel_count": road_line_count,
+                    "road_lines_semantic_fraction": road_line_fraction,
+                }
+            )
+    except (TypeError, ValueError, cv2.error):
+        return unknown
+
+    return max(candidates, key=lambda item: item["score"]) if candidates else unknown
 
 
 def projected_roi(
@@ -464,6 +607,11 @@ def _unknown_target_view(target, reason):
             "median_depth_residual_m": None,
             "occlusion_status": "unknown",
         },
+        "painted_line": {
+            "status": "unknown",
+            "image_segment": None,
+            "score": None,
+        },
     }
 
 
@@ -472,6 +620,7 @@ def _project_segment(world_points, camera, intrinsic):
         "projection_status": "unknown",
         "projected_endpoints": None,
         "image_segment": None,
+        "camera_forward_depth_m": None,
     }
     camera_points = world_to_camera(world_points, camera["transform"])
     pixels, in_front = project_camera_points(camera_points, intrinsic)
@@ -481,6 +630,7 @@ def _project_segment(world_points, camera, intrinsic):
 
     endpoints = pixels.tolist()
     result["projected_endpoints"] = endpoints
+    result["camera_forward_depth_m"] = float(np.mean(camera_points[:, 0]))
     segment = clip_image_segment(
         endpoints[0],
         endpoints[1],
@@ -693,6 +843,25 @@ def _project_target_camera(target, camera, intrinsic, depth_m):
         intrinsic,
         depth_m,
     )
+    result["painted_line"] = {
+        "status": "unknown",
+        "image_segment": None,
+        "score": None,
+    }
+    if (
+        result["boundary"]["projection_status"] == "projected"
+        and result["corridor"]["projection_status"] == "projected"
+        and len(result["corridor"]["image_envelope"]) >= 3
+        and camera.get("rgb") is not None
+    ):
+        result["painted_line"] = find_painted_line_candidate(
+            camera["rgb"],
+            depth_m,
+            result["corridor"]["image_envelope"],
+            result["boundary"]["image_segment"],
+            result["boundary"]["camera_forward_depth_m"],
+            semantic=camera.get("semantic"),
+        )
     return result
 
 

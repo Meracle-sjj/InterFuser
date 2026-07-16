@@ -171,6 +171,23 @@ class TrafficElementViewAuditTests(unittest.TestCase):
         self.assertEqual(summary["semantic_confirmed_stop_signs"], 1)
         self.assertEqual(summary["projected_stop_lines"], 1)
 
+    def test_counts_projected_relevant_stop_line_without_visible_sign_box(self):
+        record = _view_record()
+        record["cameras"]["front"]["stop_signs"][0] = _stop_view(
+            "not_visible"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            route = self._write_fixture(tmp)
+            (route / "traffic_element_views" / "0000.json").write_text(
+                json.dumps(record),
+                encoding="utf-8",
+            )
+
+            summary = audit_traffic_element_views(tmp)
+
+        self.assertEqual(summary["route_relevant_stop_sign_frames"], 1)
+        self.assertEqual(summary["visible_stop_sign_frames"], 0)
+
     def test_rejects_missing_view_frame(self):
         with tempfile.TemporaryDirectory() as tmp:
             route = self._write_fixture(tmp)

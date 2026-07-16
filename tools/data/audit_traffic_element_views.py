@@ -313,6 +313,11 @@ def audit_traffic_element_views(root):
                     },
                 )
                 frame_has_error = frame_has_error or bool(camera["errors"])
+                relevant_stop_ids = {
+                    item["actor_id"]
+                    for item in camera["stop_signs"]
+                    if item.get("affects_ego_route") is True
+                }
                 for item in camera["traffic_lights"]:
                     unique_lights.add(item["actor_id"])
                     frame_has_unknown = (
@@ -334,10 +339,6 @@ def audit_traffic_element_views(root):
                         summary["semantic_confirmed_stop_signs"] += 1
                         camera_summary["visible_stop_signs"] += 1
                         frame_visible_stop = True
-                        frame_relevant_stop = (
-                            frame_relevant_stop
-                            or item.get("affects_ego_route") is True
-                        )
                 for line in camera["stop_lines"]:
                     if line["projection_status"] == "projected":
                         summary["projected_stop_lines"] += 1
@@ -346,6 +347,11 @@ def audit_traffic_element_views(root):
                             summary["projected_stop_lines_before"] += 1
                         else:
                             summary["projected_stop_lines_after"] += 1
+                        frame_relevant_stop = frame_relevant_stop or (
+                            line.get("owner_type") == "stop_sign"
+                            and line.get("owner_actor_id")
+                            in relevant_stop_ids
+                        )
 
             summary["error_frames"] += int(frame_has_error)
             summary["unknown_frames"] += int(frame_has_unknown)

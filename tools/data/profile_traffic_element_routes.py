@@ -64,7 +64,6 @@ def _distance_summary(route, actors, relevant_radius_m, nearby_radius_m):
 def score_dense_route(
     route_points,
     traffic_lights,
-    stop_signs,
     relevant_radius_m=30.0,
     nearby_radius_m=80.0,
 ):
@@ -84,32 +83,22 @@ def score_dense_route(
     if not len(route):
         raise ValueError("route_points must not be empty")
     lights = _point_array(traffic_lights, "traffic_lights")
-    stops = _point_array(stop_signs, "stop_signs")
     light_summary = _distance_summary(
         route, lights, relevant_radius_m, nearby_radius_m
-    )
-    stop_summary = _distance_summary(
-        route, stops, relevant_radius_m, nearby_radius_m
-    )
-    nearest_infrastructure = np.minimum(
-        light_summary["route_minimum_distances"],
-        stop_summary["route_minimum_distances"],
     )
 
     return {
         "dense_route_points": int(len(route)),
         "traffic_light_actors": int(len(lights)),
-        "stop_sign_actors": int(len(stops)),
         "nearby_traffic_lights": light_summary["nearby"],
-        "nearby_stop_signs": stop_summary["nearby"],
         "relevant_traffic_lights": light_summary["relevant"],
-        "relevant_stop_signs": stop_summary["relevant"],
         "minimum_traffic_light_distance_m": light_summary[
             "minimum_distance_m"
         ],
-        "minimum_stop_sign_distance_m": stop_summary["minimum_distance_m"],
         "hard_negative_points": int(
-            np.count_nonzero(nearest_infrastructure > relevant_radius_m)
+            np.count_nonzero(
+                light_summary["route_minimum_distances"] > relevant_radius_m
+            )
         ),
         "relevant_radius_m": relevant_radius_m,
         "nearby_radius_m": nearby_radius_m,
@@ -178,7 +167,6 @@ def profile_routes(
         traffic_lights = _trigger_centers(
             actors.filter("traffic.traffic_light*")
         )
-        stop_signs = _trigger_centers(actors.filter("traffic.stop*"))
         for config in sorted(grouped[town], key=_route_sort_key):
             _, dense_route = interpolate_trajectory(
                 world, config.trajectory, hop_resolution=1.0
@@ -190,7 +178,6 @@ def profile_routes(
             score = score_dense_route(
                 route_points,
                 traffic_lights,
-                stop_signs,
                 relevant_radius_m,
                 nearby_radius_m,
             )

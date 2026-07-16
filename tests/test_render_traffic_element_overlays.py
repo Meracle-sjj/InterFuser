@@ -6,132 +6,110 @@ import cv2
 import numpy as np
 
 from tools.data.render_traffic_element_overlays import (
+    BOUNDARY_COLOR,
+    CANDIDATE_COLOR,
+    CORRIDOR_COLOR,
+    STOP_POSE_COLOR,
+    TRIGGER_COLOR,
+    build_review_manifest_entries,
     render_overlay,
     select_records,
 )
 
 
-def _camera_record(
-    *,
-    active_light=False,
-    irrelevant_light=False,
-    relevant_stop=False,
-    relevant_stop_visibility="visible",
-):
-    lights = []
-    if active_light:
-        lights.append(
-            {
-                "actor_id": 11,
-                "visibility": "visible",
-                "is_active_for_ego": True,
-                "controls_ego_lane": True,
-                "relevant_to_ego": True,
-            }
-        )
-    if irrelevant_light:
-        lights.append(
-            {
-                "actor_id": 12,
-                "visibility": "visible",
-                "is_active_for_ego": False,
-                "controls_ego_lane": False,
-                "relevant_to_ego": False,
-            }
-        )
-    stops = []
-    if relevant_stop:
-        stops.append(
-            {
-                "actor_id": 21,
-                "visibility": relevant_stop_visibility,
-                "affects_ego_route": True,
-            }
-        )
+def _light(relevant=True):
     return {
-        "traffic_lights": lights,
-        "stop_signs": stops,
-        "stop_lines": [],
+        "actor_id": 11,
+        "state": "Red",
+        "visibility": "visible",
+        "bbox_xyxy": [20, 20, 50, 60],
+        "is_active_for_ego": relevant,
+        "controls_ego_lane": relevant,
+        "relevant_to_ego": relevant,
     }
 
 
-def _record(**camera_options):
-    return {"cameras": {"front": _camera_record(**camera_options)}}
+def _target(status="available", candidate=False):
+    unknown = status == "unknown"
+    painted = {"status": "unknown", "image_segment": None, "score": None}
+    if candidate:
+        painted = {
+            "status": "candidate",
+            "image_segment": [[120.0, 190.0], [280.0, 190.0]],
+            "score": 0.8,
+        }
+    return {
+        "target_id": "Town01_Opt:7:0:-1:20.0",
+        "status": status,
+        "unknown_reason": "geometry_unknown" if unknown else None,
+        "geometry_unknown_reason": "waypoint_branch" if unknown else None,
+        "signed_route_distance_m": 10.0,
+        "trigger_waypoint": {
+            "projection_status": "unknown" if unknown else "projected",
+            "image_point": None if unknown else [50.0, 220.0],
+        },
+        "boundary": {
+            "projection_status": "unknown" if unknown else "projected",
+            "image_segment": None if unknown else [[100.0, 200.0], [300.0, 200.0]],
+        },
+        "recommended_stop_pose": {
+            "projection_status": "unknown" if unknown else "projected",
+            "image_point": None if unknown else [200.0, 240.0],
+        },
+        "corridor": {
+            "projection_status": "unknown" if unknown else "projected",
+            "image_polyline": [] if unknown else [[200.0, 240.0], [200.0, 150.0]],
+            "image_envelope": (
+                []
+                if unknown
+                else [[80.0, 250.0], [100.0, 150.0], [300.0, 150.0], [320.0, 250.0]]
+            ),
+        },
+        "painted_line": painted,
+    }
+
+
+def _record(*, target=None, light=None):
+    return {
+        "frame_id": "0000",
+        "cameras": {
+            "front": {
+                "traffic_lights": [] if light is None else [light],
+                "stop_targets": [] if target is None else [target],
+            }
+        },
+    }
 
 
 class TrafficElementOverlayTests(unittest.TestCase):
-    def test_render_overlay_draws_boxes_lines_and_labels(self):
-        record = {
-            "frame_id": "0000",
-            "cameras": {
-                "front": {
-                    "traffic_lights": [
-                        {
-                            "actor_id": 11,
-                            "state": "Red",
-                            "visibility": "visible",
-                            "bbox_xyxy": [40, 30, 80, 70],
-                            "is_active_for_ego": True,
-                            "controls_ego_lane": True,
-                        }
-                    ],
-                    "stop_signs": [
-                        {
-                            "actor_id": 21,
-                            "visibility": "visible",
-                            "bbox_xyxy": [100, 50, 130, 100],
-                            "affects_ego_route": True,
-                        }
-                    ],
-                    "stop_lines": [
-                        {
-                            "owner_actor_id": 11,
-                            "geometry_source": "carla_stop_waypoint",
-                            "longitudinal_distance": 8.0,
-                            "projection_status": "projected",
-                            "image_segment": [[20.0, 200.0], [300.0, 200.0]],
-                        }
-                    ],
-                }
-            },
-        }
-
+    def test_render_overlay_draws_all_geometry_layers(self):
+        record = _record(target=_target(candidate=True), light=_light())
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            rgb_path = root / "0000.jpg"
-            output_path = root / "overlay.jpg"
-            cv2.imwrite(
-                str(rgb_path),
-                np.full((300, 400, 3), 255, dtype=np.uint8),
-            )
+            rgb_path = root / "0000.png"
+            output_path = root / "overlay.png"
+            cv2.imwrite(str(rgb_path), np.full((300, 400, 3), 255, dtype=np.uint8))
 
-            result = render_overlay(
-                rgb_path,
-                record,
-                camera_name="front",
-                output_path=output_path,
-            )
-
-            self.assertEqual(result, output_path)
-            self.assertTrue(output_path.exists())
+            render_overlay(rgb_path, record, "front", output_path)
             image = cv2.imread(str(output_path))
-            self.assertEqual(image.shape[:2], (300, 400))
-            self.assertTrue(np.any(image != 255))
 
-    def test_select_records_prioritizes_coverage_then_fills_by_frame_id(self):
+        self.assertTrue(np.array_equal(image[220, 50], TRIGGER_COLOR))
+        self.assertTrue(np.array_equal(image[200, 200], BOUNDARY_COLOR))
+        self.assertTrue(np.array_equal(image[240, 200], STOP_POSE_COLOR))
+        self.assertTrue(np.array_equal(image[250, 80], CORRIDOR_COLOR))
+        self.assertTrue(np.array_equal(image[190, 200], CANDIDATE_COLOR))
+
+    def test_select_records_prioritizes_target_and_negative_coverage(self):
         records = [
-            ("route_b/0005", _record()),
-            ("route_a/0003", _record(irrelevant_light=True)),
-            ("route_a/0001", _record(active_light=True)),
-            ("route_a/0002", _record(irrelevant_light=True)),
+            ("route/traffic_element_views/0005", _record(light=_light())),
+            ("route/traffic_element_views/0003", _record(light=_light(False))),
+            ("route/traffic_element_views/0001", _record(target=_target())),
             (
-                "route_a/0004",
-                _record(
-                    relevant_stop=True,
-                    relevant_stop_visibility="not_visible",
-                ),
+                "route/traffic_element_views/0002",
+                _record(target=_target(status="unknown")),
             ),
-            ("route_a/0000", _record()),
+            ("route/traffic_element_views/0004", _record()),
+            ("route/traffic_element_views/0000", _record(light=_light())),
         ]
 
         selected = select_records(records, camera_name="front", limit=5)
@@ -139,11 +117,34 @@ class TrafficElementOverlayTests(unittest.TestCase):
         self.assertEqual(
             [key for key, _record in selected],
             [
-                "route_a/0001",
-                "route_a/0002",
-                "route_a/0004",
-                "route_a/0003",
-                "route_a/0000",
+                "route/traffic_element_views/0001",
+                "route/traffic_element_views/0002",
+                "route/traffic_element_views/0003",
+                "route/traffic_element_views/0004",
+                "route/traffic_element_views/0000",
+            ],
+        )
+
+    def test_review_manifest_contains_only_candidates(self):
+        records = [
+            (
+                "route/traffic_element_views/0001",
+                _record(target=_target(candidate=True)),
+            ),
+            ("route/traffic_element_views/0002", _record(target=_target())),
+        ]
+
+        entries = build_review_manifest_entries(records, camera_name="front")
+
+        self.assertEqual(
+            entries,
+            [
+                {
+                    "view_path": "route/traffic_element_views/0001.json",
+                    "camera": "front",
+                    "target_id": "Town01_Opt:7:0:-1:20.0",
+                    "decision": "unreviewed",
+                }
             ],
         )
 

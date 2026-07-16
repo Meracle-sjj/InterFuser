@@ -342,6 +342,19 @@ class TrafficElementViewAuditTests(unittest.TestCase):
         self.assertEqual(summary["painted_line_candidates"], 0)
         self.assertEqual(summary["verified_painted_lines"], 1)
 
+    def test_accepts_manually_rejected_candidate(self):
+        record = _view_record()
+        painted = record["cameras"]["front"]["stop_targets"][0]["painted_line"]
+        painted["status"] = "unknown"
+        painted["review_source"] = "manual_manifest"
+        painted["review_decision"] = "rejected"
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_fixture(tmp, record)
+            summary = audit_traffic_element_views(tmp)
+
+        self.assertEqual(summary["painted_line_candidates"], 0)
+        self.assertEqual(summary["verified_painted_lines"], 0)
+
     def test_rejects_missing_lidar_frame(self):
         with tempfile.TemporaryDirectory() as tmp:
             route = self._write_fixture(tmp)

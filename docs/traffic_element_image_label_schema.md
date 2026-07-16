@@ -1,25 +1,36 @@
-# Traffic Element Image Label Schema
+# Traffic-Element Evidence Schema v3
 
-Image schema version: `2`
+Evidence schema v3 associates traffic-element schema v2 with aligned RGB,
+semantic, depth, and lidar observations. A valid route target remains valid
+when a camera is occluded or a sensor is unavailable; geometry status and
+sensor-evidence status are intentionally separate.
 
-Source traffic-element schema: `traffic_elements/*.json`, version `1`
+## Top-level record
 
-`InterfuserDataCollector` writes one image-label record for every saved sensor
-frame:
+Each `traffic_element_views/<frame>.json` file contains:
 
-```text
-<route>/traffic_element_views/0000.json
-<route>/traffic_element_views/0001.json
-...
+```json
+{
+  "schema_version": 3,
+  "source_traffic_element_schema_version": 2,
+  "frame_id": "0000",
+  "association": {},
+  "cameras": {
+    "front": {},
+    "left": {},
+    "right": {}
+  },
+  "lidar": {"targets": [], "errors": []},
+  "errors": []
+}
 ```
 
-The record projects the Phase 1 traffic-light, stop-sign, and stop-line labels
-into the existing front, left, and right cameras. It is an auditable view of
-the Phase 1 actors, not an independent source of traffic-control relevance.
+The evidence file, phase-v2 file, front/left/right RGB images, and complete
+lidar array must share the same frame stem.
 
-## Association Constants
+## Evidence constants
 
-The version 2 constants are copied into every record:
+The serialized `association` object must exactly match:
 
 ```json
 {
@@ -29,199 +40,145 @@ The version 2 constants are copied into every record:
     "semantic_tag": 7,
     "depth_tolerance_m": 4.0
   },
-  "stop_sign": {
-    "semantic_tag": 8,
-    "depth_tolerance_m": 6.0
-  }
+  "road_lines_semantic_tag": 24,
+  "corridor_depth_tolerance_m": 2.0,
+  "lidar_min_height_m": -0.5,
+  "lidar_max_height_m": 3.0,
+  "lidar_road_surface_tolerance_m": 0.25
 }
 ```
 
-Readers must reject records whose constants differ from the values above.
-Changing a tag, tolerance, minimum support, or ROI expansion changes label
-semantics and therefore requires a new `schema_version`.
+## Coordinates
 
-## Coordinate and Image Conventions
+CARLA world and sensor transforms use homogeneous local-to-world 4x4 matrices.
+Camera-local axes are forward, right, and up. Projection maps these to image
+right, image down, and depth. Pixel boxes are `xyxy` with an exclusive right
+and bottom edge; projected points and segments must lie within numeric image
+bounds.
 
-World geometry uses CARLA's left-handed coordinates in meters. Camera-space
-coordinates use `forward`, `right`, and `up`. Projection uses:
+Lidar points remain in the complete `lidar/<frame>.npy` array. The evidence
+record stores enough transforms and corridor geometry to reproduce the crop;
+it does not duplicate points or save point indices.
 
-```text
-u = cx + focal * right / forward
-v = cy - focal * up / forward
-```
+## Traffic-light evidence
 
-Only points with positive camera `forward` are projectable. Camera intrinsics
-are calculated from the image width and horizontal field of view. The current
-collector uses 400 x 300 images and a 100-degree field of view for front,
-left, and right cameras.
+Each camera retains one view per phase-v2 traffic-light actor. CARLA 0.9.16
+light-box geometry defines the projection ROI where available. A lamp box is
+`visible` only when at least three semantic-tag-7 pixels also agree with one of
+the light-box depths within 4.0 m.
 
-`bbox_xyxy` and `geometry_roi_xyxy` use pixel coordinates in
-`[x1, y1, x2, y2]` order. Left and top are inclusive; right and bottom are
-exclusive. A valid box satisfies:
+Missing actors or sensors produce `visibility="unknown"`. A valid projection
+without semantic/depth support produces `not_visible`, which is a known visual
+state rather than missing evidence.
 
-```text
-0 <= x1 < x2 <= width
-0 <= y1 < y2 <= height
-```
+## Stop-target camera evidence
 
-For traffic lights, the geometry ROI is the union of the world-space boxes
-returned by CARLA 0.9.16 `TrafficLight.get_light_boxes()`. The traffic-light
-actor `bounding_box` is its road trigger volume and does not enclose the
-visible lamps. Other actors use their bounding box or trigger volume. The ROI
-is expanded by six pixels and clipped to the image. The final `bbox_xyxy` is
-the tight box around semantic pixels that also satisfy the depth test.
+Each phase-v2 target appears exactly once under every camera and records:
 
-CARLA depth images are received in OpenCV BGR byte order. Version 2 decodes
-meters as:
+- `target_id`, owner lights, geometry provenance, and signed route distance;
+- projected trigger waypoint;
+- projected Leaderboard infraction boundary endpoints and clipped segment;
+- projected recommended ego stop pose;
+- corridor center polyline and lane-width envelope;
+- finite-depth sample count, supported-depth count, median residual, and
+  occlusion status;
+- optional `painted_line` review evidence.
 
-```text
-depth_m = 1000 * (B * 65536 + G * 256 + R) / (256^3 - 1)
-```
+Projection states are:
 
-The depth residual is the minimum difference to the camera distance of any
-projected geometry center. A traffic-light actor can have several lamp boxes,
-so each box center is retained as a valid expected depth.
+- `projected`: geometry intersects the image;
+- `outside_image`: in front of the camera but outside its bounds;
+- `behind_camera`: not in the forward half-space;
+- `unknown`: geometry or sensor processing could not be evaluated.
 
-## Top-Level Record
+For valid projected corridor samples, decoded depth is compared with the
+camera-forward sample depth. Residuals at or below 2.0 m count as support. If
+finite depth exists but no sample meets the threshold, the corridor is marked
+`occluded`.
 
-```json
-{
-  "schema_version": 2,
-  "source_traffic_element_schema_version": 1,
-  "frame_id": "0000",
-  "association": {},
-  "cameras": {
-    "front": {},
-    "left": {},
-    "right": {}
-  },
-  "errors": []
-}
-```
+If the phase target has unknown topology, camera evidence must use
+`unknown_reason="geometry_unknown"` and preserve the phase reason separately.
+Camera processing cannot reinterpret it as a negative. For valid geometry,
+missing or failed sensors use `sensor_unavailable` or `projection_error`.
 
-| Field | Meaning |
-| --- | --- |
-| `schema_version` | Image-label schema version. Version 2 readers must reject other values. |
-| `source_traffic_element_schema_version` | Version of the matching Phase 1 record. |
-| `frame_id` | String frame ID; it must match the JSON and RGB filename stem. |
-| `association` | Exact versioned constants shown above. |
-| `cameras` | Exactly `front`, `left`, and `right` for audited collector output. |
-| `errors` | Phase 1 extraction errors copied without reinterpretation. |
+## Painted-line review evidence
 
-Each camera object contains `width`, `height`, `fov_degrees`,
-`traffic_lights`, `stop_signs`, `stop_lines`, and `errors`. Camera errors
-include missing sensors, missing actors, actor projection failures, and
-stop-line projection failures.
+A painted line is optional. It is not required for a valid stop target.
 
-## Traffic-Light and Stop-Sign Views
+Automatic extraction is constrained to the projected corridor. It uses Canny
+edges and probabilistic Hough segments, then requires:
 
-All Phase 1 actors are retained in each camera, including off-screen,
-occluded, irrelevant, and unavailable actors. Actor identity and relevance
-are never inferred again from image pixels.
+- undirected angle within 15 degrees of the projected evaluator boundary;
+- length at least 25 percent of the projected boundary length;
+- median finite depth residual at most 2.0 m.
 
-Common fields are:
+Semantic `RoadLines` support is recorded as a diagnostic and is not proof by
+itself. Automatic code returns only `candidate` or `unknown`; it never returns
+`verified`.
 
-| Field | Meaning |
-| --- | --- |
-| `actor_id` | CARLA actor ID copied from Phase 1. |
-| `element_type` | `traffic_light` or `stop_sign`. |
-| `visibility` | `visible`, `not_visible`, or `unknown`. |
-| `bbox_xyxy` | Tight semantic/depth-confirmed box, otherwise `null`. |
-| `geometry_roi_xyxy` | Expanded projected geometry ROI; nullable when geometry is off-screen or unavailable. |
-| `semantic_pixel_count` | Matching semantic/depth pixels inside the ROI. |
-| `median_depth_residual_m` | Median absolute residual for matching pixels; non-null only for a visible item. |
-| `association_source` | Evidence or failure state listed below. |
-| `geometry_source` | `traffic_light_boxes`, `actor_bounding_box`, `trigger_volume`, or `null` when geometry was unavailable. |
-
-Traffic-light views also copy `state`, `is_active_for_ego`,
-`controls_ego_lane`, and `relevant_to_ego`. Stop-sign views copy
-`affects_ego_route`. Their definitions remain those in
-`docs/traffic_element_label_schema.md`.
-
-### Visibility
-
-`visible` means at least three pixels within the projected ROI have the
-expected semantic tag and a depth residual within the configured tolerance.
-Its `association_source` is `semantic_depth_confirmed`.
-
-`not_visible` means projection and association were evaluated, but the actor
-was off-screen or did not have enough semantic/depth support. Its
-`association_source` is `semantic_depth_no_support`. This is a per-camera
-visibility result, not a negative traffic-control relevance label.
-
-`unknown` means the evidence required to evaluate visibility was unavailable.
-Its `association_source` is one of `actor_missing`, `sensor_unavailable`, or
-`projection_error`. Unknown items must not be used as negative examples.
-
-`bbox_xyxy` is null for both `not_visible` and `unknown`. Extraction or camera
-errors must be filtered explicitly before negative-label training.
-
-CARLA 0.9.16 identifies traffic-light pixels with `CityObjectLabel` value 7
-and traffic-sign pixels with value 8. Values 18 and 12 are Motorcycle and
-Pedestrians in this build and must not be used for these labels.
-
-A Phase 1 `traffic.stop` actor can exist without a visible vertical stop-sign
-asset. Town03 route36 is such a case: RGB contains a road-surface `STOP`
-marking, while the semantic image contains no tag-8 sign pixels. The actor is
-retained as `not_visible`; its route-relevant projected stop line remains valid
-supervision. Consumers must not synthesize a stop-sign visual positive from
-the trigger volume.
-
-## Stop-Line Views
-
-Each Phase 1 stop line is projected independently into every camera:
-
-```json
-{
-  "owner_actor_id": 11,
-  "owner_type": "traffic_light",
-  "geometry_source": "carla_stop_waypoint",
-  "longitudinal_distance": 8.0,
-  "ego_before_line": true,
-  "projected_endpoints": [[12.5, 220.0], [387.0, 220.0]],
-  "image_segment": [[12.5, 220.0], [387.0, 220.0]],
-  "projection_status": "projected"
-}
-```
-
-`owner_actor_id`, `owner_type`, `geometry_source`,
-`longitudinal_distance`, and `ego_before_line` are copied from the matching
-Phase 1 actor and stop line. Distances are ego-forward meters and may be
-negative after crossing.
-
-Traffic-light lines use `carla_stop_waypoint`. Stop-sign lines use
-`trigger_volume_route_entry_approximation`. The latter remains approximate
-and must not be presented as an exact simulator stop position.
-
-`projected_endpoints` contains the raw image projections when both world
-endpoints are in front of the camera. These points may lie outside the image.
-`image_segment` contains the line clipped to inclusive image bounds and is
-non-null only when `projection_status` is `projected`.
-
-Valid projection statuses are:
-
-| Status | Meaning |
-| --- | --- |
-| `projected` | Both endpoints are in front and the clipped segment intersects the image. |
-| `outside_image` | Both endpoints are in front, but the segment does not intersect the image. |
-| `behind_camera` | At least one endpoint is not in front of the camera. |
-
-If projection raises an exception, the line is omitted and the camera error
-is recorded. A missing line with an error is unknown evidence, not proof that
-the stop line is absent.
-
-## Audit and Overlay Commands
+Generate review overlays and a manifest with:
 
 ```bash
-/data1/shijj/conda_envs/interfuser_origin/bin/python \
-  tools/data/audit_traffic_element_views.py <dataset-or-route-root>
-
-/data1/shijj/conda_envs/interfuser_origin/bin/python \
-  tools/data/render_traffic_element_overlays.py <dataset-or-route-root> \
-  --output-dir <review-directory> --limit 12 --camera front
+python tools/data/render_traffic_element_overlays.py <dataset-root> \
+  --output-dir <overlay-dir> --camera front --limit 16 \
+  --review-manifest-output <manifest.json>
 ```
 
-The audit requires matching RGB, Phase 1, and image-view frame IDs; exact
-front/left/right camera keys; Phase 1 actor identity preservation; finite,
-in-bounds positive-area boxes and line segments; minimum semantic support;
-and consistent association constants and stop-line provenance.
+Manifest decisions are `verified`, `rejected`, or `unreviewed`. Apply explicit
+decisions with:
+
+```bash
+python tools/data/apply_painted_line_reviews.py \
+  <dataset-root> <manifest.json>
+```
+
+Only an existing `candidate` can become `verified` or be rejected. A verified
+entry must carry `review_source="manual_manifest"`. The entire manifest is
+validated before any evidence file is replaced.
+
+## Lidar target evidence
+
+For each target, the record stores:
+
+- `sensor_to_ego` and `ego_to_world` 4x4 matrices;
+- corridor centerline in lidar coordinates;
+- per-sample half widths and road heights;
+- total in-corridor point count;
+- road-surface-band point count.
+
+The crop accepts points within the nearest corridor sample half width and the
+height interval [-0.5 m, 3.0 m]. Road-surface support uses an absolute relative
+height tolerance of 0.25 m. Counts are diagnostics and may be zero. Missing or
+invalid data is `unknown`, never a negative.
+
+## Forbidden legacy content
+
+Evidence schema v3 has no roadside-sign views, sign association constants, or
+generic sign-derived lines. Generated JSON containing a `stop_sign` key,
+`traffic.stop` actor value, or
+`trigger_volume_route_entry_approximation` provenance is invalid. The word is
+mentioned here only to define the compatibility rejection rule.
+
+## Validation and overlay legend
+
+Run:
+
+```bash
+python tools/data/audit_traffic_element_views.py <dataset-root>
+```
+
+The audit checks schema linkage, exact evidence constants, frame alignment,
+camera bounds, phase target/actor ownership, geometry-versus-sensor unknown
+states, lidar transforms/counts, and manual verification provenance.
+
+Overlay colors are BGR:
+
+| Layer | Color |
+| --- | --- |
+| Trigger waypoint | `(255, 255, 0)` |
+| Leaderboard boundary | `(255, 0, 255)` |
+| Recommended stop pose | `(255, 0, 0)` |
+| Route corridor | `(0, 180, 0)` |
+| Painted-line candidate | `(0, 255, 255)` |
+
+Learned junction outputs never generate or validate evidence.

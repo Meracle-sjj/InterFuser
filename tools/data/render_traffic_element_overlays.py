@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Render deterministic RGB samples for traffic-element label review."""
+"""Render deterministic traffic-light and stop-target evidence overlays."""
 
 import argparse
 import json
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 
 LIGHT_COLORS = {
@@ -13,10 +14,12 @@ LIGHT_COLORS = {
     "yellow": (0, 255, 255),
     "green": (0, 255, 0),
 }
-STOP_SIGN_COLOR = (255, 255, 0)
-EXACT_STOP_LINE_COLOR = (255, 0, 255)
-APPROXIMATE_STOP_LINE_COLOR = (0, 165, 255)
 UNKNOWN_LIGHT_COLOR = (192, 192, 192)
+TRIGGER_COLOR = (255, 255, 0)
+BOUNDARY_COLOR = (255, 0, 255)
+STOP_POSE_COLOR = (255, 0, 0)
+CORRIDOR_COLOR = (0, 180, 0)
+CANDIDATE_COLOR = (0, 255, 255)
 
 
 def _visible(item):
@@ -32,104 +35,77 @@ def _camera(record, camera_name):
 
 def _frame_flags(record, camera_name):
     camera = _camera(record, camera_name)
+    targets = camera.get("stop_targets", [])
     lights = camera.get("traffic_lights", [])
-    stops = camera.get("stop_signs", [])
     visible_lights = [item for item in lights if _visible(item)]
-    visible_stops = [item for item in stops if _visible(item)]
-    active_light = any(
-        item.get("is_active_for_ego") is True for item in visible_lights
+    valid_target = any(item.get("status") == "available" for item in targets)
+    unknown_target = any(
+        item.get("unknown_reason") == "geometry_unknown"
+        or item.get("geometry_unknown_reason") is not None
+        for item in targets
     )
     irrelevant_light = any(
-        item.get("is_active_for_ego") is False
-        and item.get("controls_ego_lane") is False
-        and item.get("relevant_to_ego") is False
-        for item in visible_lights
+        item.get("relevant_to_ego") is False for item in visible_lights
     )
-    relevant_stop = any(
-        item.get("affects_ego_route") is True for item in stops
-    )
-    visible_infrastructure = bool(visible_lights or visible_stops)
     return {
-        "active_light": active_light,
+        "valid_target": valid_target,
+        "unknown_target": unknown_target,
         "irrelevant_light": irrelevant_light,
-        "relevant_stop": relevant_stop,
-        "hard_negative": (
-            visible_infrastructure and not active_light and not relevant_stop
-        ),
+        "hard_negative": not targets and not visible_lights,
     }
 
 
 def select_records(records, camera_name="front", limit=12):
-    """Select coverage samples deterministically, then fill by record key."""
+    """Select deterministic geometry and negative coverage samples."""
     if limit < 0:
         raise ValueError("limit must be nonnegative")
     ordered = sorted(records, key=lambda entry: str(entry[0]))
     selected = []
     selected_keys = set()
-    flags = {
-        key: _frame_flags(record, camera_name) for key, record in ordered
-    }
-
+    flags = {key: _frame_flags(record, camera_name) for key, record in ordered}
     for category in (
-        "active_light",
+        "valid_target",
+        "unknown_target",
         "irrelevant_light",
-        "relevant_stop",
         "hard_negative",
     ):
-        if len(selected) >= limit:
-            break
         for entry in ordered:
+            if len(selected) >= limit:
+                break
             key = entry[0]
             if key not in selected_keys and flags[key][category]:
                 selected.append(entry)
                 selected_keys.add(key)
                 break
-
     for entry in ordered:
         if len(selected) >= limit:
             break
-        key = entry[0]
-        if key not in selected_keys:
+        if entry[0] not in selected_keys:
             selected.append(entry)
-            selected_keys.add(key)
+            selected_keys.add(entry[0])
     return selected
 
 
-def _actor_distances(camera):
-    distances = {}
-    for line in camera.get("stop_lines", []):
-        distance = line.get("longitudinal_distance")
-        actor_id = line.get("owner_actor_id")
-        if not isinstance(distance, (int, float)) or actor_id is None:
-            continue
-        current = distances.get(actor_id)
-        if current is None or abs(distance) < abs(current):
-            distances[actor_id] = float(distance)
-    return distances
+def _pixel(point):
+    return tuple(int(round(value)) for value in point)
 
 
-def _label_for_actor(prefix, item, distance):
-    parts = [f"{prefix}#{item.get('actor_id', '?')}"]
-    state = item.get("state")
-    if state is not None:
-        parts.append(str(state))
-    parts.append(str(item.get("visibility", "unknown")))
-    if distance is not None:
-        parts.append(f"{distance:+.1f}m")
-    return " ".join(parts)
-
-
-def _draw_box_and_label(image, item, color, label):
+def _draw_box_and_label(image, item):
     box = item.get("bbox_xyxy")
     if not _visible(item) or not isinstance(box, list) or len(box) != 4:
         return
+    color = LIGHT_COLORS.get(str(item.get("state", "")).lower(), UNKNOWN_LIGHT_COLOR)
     x1, y1, x2, y2 = (int(round(value)) for value in box)
     cv2.rectangle(image, (x1, y1), (x2 - 1, y2 - 1), color, 2)
-    text_y = max(12, y1 - 4)
+    label = "TL#{} {} {}".format(
+        item.get("actor_id", "?"),
+        item.get("state", "unknown"),
+        "route" if item.get("relevant_to_ego") else "irrelevant",
+    )
     cv2.putText(
         image,
         label,
-        (max(0, x1), text_y),
+        (max(0, x1), max(12, y1 - 4)),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.35,
         color,
@@ -138,68 +114,117 @@ def _draw_box_and_label(image, item, color, label):
     )
 
 
-def _draw_stop_line(image, line):
-    if line.get("projection_status") != "projected":
+def _draw_projected_point(image, projection, color, marker="circle"):
+    if projection.get("projection_status") != "projected":
         return
-    segment = line.get("image_segment")
+    point = projection.get("image_point")
+    if not isinstance(point, list) or len(point) != 2:
+        return
+    if marker == "cross":
+        cv2.drawMarker(image, _pixel(point), color, cv2.MARKER_CROSS, 12, 2)
+    else:
+        cv2.circle(image, _pixel(point), 5, color, -1)
+
+
+def _draw_segment(image, projection, color, thickness=2):
+    if projection.get("projection_status") != "projected":
+        return
+    segment = projection.get("image_segment")
     if not isinstance(segment, list) or len(segment) != 2:
         return
-    start = tuple(int(round(value)) for value in segment[0])
-    end = tuple(int(round(value)) for value in segment[1])
-    exact = line.get("geometry_source") == "carla_stop_waypoint"
-    color = EXACT_STOP_LINE_COLOR if exact else APPROXIMATE_STOP_LINE_COLOR
-    cv2.line(image, start, end, color, 2, cv2.LINE_AA)
-    midpoint = (
-        int(round((start[0] + end[0]) / 2.0)),
-        max(12, int(round((start[1] + end[1]) / 2.0)) - 4),
+    cv2.line(image, _pixel(segment[0]), _pixel(segment[1]), color, thickness)
+
+
+def _draw_target(image, target):
+    corridor = target.get("corridor", {})
+    if corridor.get("projection_status") == "projected":
+        envelope = corridor.get("image_envelope", [])
+        if len(envelope) >= 3:
+            points = np.rint(np.asarray(envelope)).astype(np.int32)
+            cv2.polylines(image, [points], True, CORRIDOR_COLOR, 2)
+        polyline = corridor.get("image_polyline", [])
+        if len(polyline) >= 2:
+            points = np.rint(np.asarray(polyline)).astype(np.int32)
+            cv2.polylines(image, [points], False, CORRIDOR_COLOR, 1)
+
+    _draw_projected_point(image, target.get("trigger_waypoint", {}), TRIGGER_COLOR)
+    _draw_segment(image, target.get("boundary", {}), BOUNDARY_COLOR, 2)
+    _draw_projected_point(
+        image,
+        target.get("recommended_stop_pose", {}),
+        STOP_POSE_COLOR,
+        marker="cross",
     )
-    distance = line.get("longitudinal_distance")
-    distance_text = (
-        f" {float(distance):+.1f}m"
-        if isinstance(distance, (int, float))
-        else ""
+    painted = target.get("painted_line", {})
+    if painted.get("status") in {"candidate", "verified"}:
+        segment = painted.get("image_segment")
+        if isinstance(segment, list) and len(segment) == 2:
+            cv2.line(
+                image,
+                _pixel(segment[0]),
+                _pixel(segment[1]),
+                CANDIDATE_COLOR,
+                2,
+            )
+
+    anchor = target.get("recommended_stop_pose", {}).get("image_point")
+    if not isinstance(anchor, list):
+        segment = target.get("boundary", {}).get("image_segment")
+        anchor = segment[0] if isinstance(segment, list) and segment else [8, 18]
+    distance = target.get("signed_route_distance_m")
+    distance_text = f" {float(distance):+.1f}m" if isinstance(distance, (int, float)) else ""
+    reason = target.get("geometry_unknown_reason") or target.get("unknown_reason")
+    text = "{}{} {}{}".format(
+        target.get("target_id", "target"),
+        distance_text,
+        target.get("status", "unknown"),
+        f" {reason}" if reason else "",
     )
     cv2.putText(
         image,
-        f"line#{line.get('owner_actor_id', '?')}{distance_text}",
-        midpoint,
+        text,
+        (max(0, int(anchor[0])), max(12, int(anchor[1]) - 8)),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.35,
-        color,
+        BOUNDARY_COLOR,
         1,
         cv2.LINE_AA,
     )
 
 
 def render_overlay(rgb_path, view_record, camera_name, output_path):
-    """Draw traffic-element labels over one RGB frame and return its path."""
+    """Draw v3 traffic-light and stop-target evidence over one RGB frame."""
     rgb_path = Path(rgb_path)
     output_path = Path(output_path)
     image = cv2.imread(str(rgb_path), cv2.IMREAD_COLOR)
     if image is None:
         raise ValueError(f"unable to read RGB image: {rgb_path}")
-
     camera = _camera(view_record, camera_name)
-    distances = _actor_distances(camera)
-    for item in camera.get("traffic_lights", []):
-        state = str(item.get("state", "unknown"))
-        color = LIGHT_COLORS.get(state.lower(), UNKNOWN_LIGHT_COLOR)
-        label = _label_for_actor(
-            "TL", item, distances.get(item.get("actor_id"))
-        )
-        _draw_box_and_label(image, item, color, label)
-    for item in camera.get("stop_signs", []):
-        label = _label_for_actor(
-            "STOP", item, distances.get(item.get("actor_id"))
-        )
-        _draw_box_and_label(image, item, STOP_SIGN_COLOR, label)
-    for line in camera.get("stop_lines", []):
-        _draw_stop_line(image, line)
-
+    for light in camera.get("traffic_lights", []):
+        _draw_box_and_label(image, light)
+    for target in camera.get("stop_targets", []):
+        _draw_target(image, target)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if not cv2.imwrite(str(output_path), image):
         raise OSError(f"unable to write overlay image: {output_path}")
     return output_path
+
+
+def build_review_manifest_entries(records, camera_name="front"):
+    entries = []
+    for key, record in records:
+        for target in _camera(record, camera_name).get("stop_targets", []):
+            if target.get("painted_line", {}).get("status") != "candidate":
+                continue
+            entries.append(
+                {
+                    "view_path": f"{key}.json",
+                    "camera": camera_name,
+                    "target_id": target["target_id"],
+                    "decision": "unreviewed",
+                }
+            )
+    return entries
 
 
 def _discover_records(root, camera_name):
@@ -210,9 +235,7 @@ def _discover_records(root, camera_name):
         route = view_path.parent.parent
         rgb_path = route / f"rgb_{camera_name}" / f"{view_path.stem}.jpg"
         if not rgb_path.is_file():
-            raise FileNotFoundError(
-                f"RGB frame for {view_path} is missing: {rgb_path}"
-            )
+            raise FileNotFoundError(f"RGB frame for {view_path} is missing: {rgb_path}")
         key = view_path.relative_to(root).with_suffix("").as_posix()
         record = json.loads(view_path.read_text(encoding="utf-8"))
         records.append((key, record))
@@ -223,15 +246,12 @@ def _discover_records(root, camera_name):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(
-        description="Render deterministic traffic-element label overlays"
-    )
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("root")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--limit", type=int, default=12)
-    parser.add_argument(
-        "--camera", choices=("front", "left", "right"), default="front"
-    )
+    parser.add_argument("--camera", choices=("front", "left", "right"), default="front")
+    parser.add_argument("--review-manifest-output")
     args = parser.parse_args(argv)
 
     records, assets = _discover_records(args.root, args.camera)
@@ -239,15 +259,22 @@ def main(argv=None):
     outputs = []
     output_dir = Path(args.output_dir)
     for index, (key, record) in enumerate(selected):
-        output_name = f"{index:02d}_{key.replace('/', '__')}.jpg"
         output = render_overlay(
             assets[key],
             record,
             camera_name=args.camera,
-            output_path=output_dir / output_name,
+            output_path=output_dir / f"{index:02d}_{key.replace('/', '__')}.jpg",
         )
         outputs.append(str(output))
-    print(json.dumps({"rendered": len(outputs), "outputs": outputs}, indent=2))
+    manifest = build_review_manifest_entries(selected, args.camera)
+    if args.review_manifest_output:
+        manifest_path = Path(args.review_manifest_output)
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    print(json.dumps({"rendered": len(outputs), "outputs": outputs, "candidates": len(manifest)}, indent=2))
     return 0
 
 

@@ -86,6 +86,10 @@ def _valid_stop_target():
         "unknown_reason": None,
         "geometry_source": "scenario_runner_running_red_light_test_v1",
         "owner_traffic_light_actor_ids": [11],
+        "signed_route_distance_m": 10.0,
+        "trigger_stop_waypoint": {
+            "location": {"x": 8.0, "y": 0.0, "z": 0.0},
+        },
         "leaderboard_infraction_boundary": {
             "left_endpoint": {"x": 10.0, "y": -1.0, "z": 0.0},
             "right_endpoint": {"x": 10.0, "y": 1.0, "z": 0.0},
@@ -482,6 +486,11 @@ class EvidenceSchemaV3Tests(unittest.TestCase):
     def test_camera_projects_boundary_pose_and_corridor(self):
         target = self._build_view()["cameras"]["front"]["stop_targets"][0]
 
+        self.assertEqual(target["signed_route_distance_m"], 10.0)
+        self.assertEqual(
+            target["trigger_waypoint"]["projection_status"],
+            "projected",
+        )
         self.assertEqual(target["boundary"]["projection_status"], "projected")
         self.assertIsNotNone(target["boundary"]["image_segment"])
         self.assertEqual(

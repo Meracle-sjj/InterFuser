@@ -169,6 +169,16 @@ def _painted_line_errors(painted, path, width, height):
     if status not in {"unknown", "candidate", "verified"}:
         return [f"{path}.status is invalid"]
     if status == "unknown":
+        if painted.get("review_source") == "manual_manifest":
+            if painted.get("review_decision") != "rejected":
+                return [f"{path}.manual review must record rejected decision"]
+            return _points_errors(
+                painted.get("image_segment"),
+                f"{path}.image_segment",
+                width,
+                height,
+                minimum=2,
+            )
         if painted.get("image_segment") is not None:
             return [f"{path}.image_segment must be null when unknown"]
         return []

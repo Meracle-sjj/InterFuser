@@ -1,213 +1,164 @@
-# Traffic Element Label Schema
+# Traffic-Element Label Schema v2
 
-Schema version: `1`
+This schema records route-associated traffic-light stop targets. It replaces
+the legacy roadside-sign schema and every approximate sign-derived line.
 
-`InterfuserDataCollector` writes one JSON document per saved sensor frame to:
+The target is a safe driving reference near a signalized junction, not a claim
+that CARLA contains a visible painted white line at that location. RGB, depth,
+semantic, and lidar evidence are recorded separately under evidence schema v3.
 
-```text
-<route>/traffic_elements/0000.json
-<route>/traffic_elements/0001.json
-...
-```
+## Source of truth
 
-The record is the source of truth for traffic-light, stop-sign, and stop-line
-supervision. The legacy `affordances` file is derived from this record.
+The boundary geometry mirrors Leaderboard 1.0 Scenario Runner
+`RunningRedLightTest`:
 
-## Coordinate Conventions
+1. Transform the traffic-light trigger volume into world coordinates.
+2. Sample 90 percent of its lateral extent at 1.0 m intervals.
+3. Map samples to lane waypoints and collapse consecutive lane duplicates.
+4. Advance with `waypoint.next(0.5)[0]` until the next waypoint is inside an
+   intersection.
+5. Place boundary endpoints at 0.4 times the lane width on either side of the
+   final non-intersection waypoint.
 
-- World positions use CARLA world coordinates in meters.
-- Rotations use CARLA pitch/yaw/roll in degrees.
-- Ego-relative positions use meters with these axes:
-  - `forward`: positive in the ego vehicle's forward direction;
-  - `right`: positive to the ego vehicle's right;
-  - `up`: positive upward.
-- `longitudinal_distance` is the stop-line center's `forward` coordinate.
-- `lateral_offset` is the stop-line center's `right` coordinate.
-- `ego_before_line` is `true` when `longitudinal_distance >= 0`.
+The provenance string is
+`scenario_runner_running_red_light_test_v1`. The trigger waypoint provenance
+is `carla_traffic_light_trigger_waypoint`.
 
-The sign of `ego_before_line` is a geometric observation, not proof that the
-line controls the ego route. Consumers must also check the parent element's
-route relevance.
+`net_is_junction`, `aux_junction`, and `new_junction_prediction` are learned
+outputs. They never create, suppress, or modify labels. OpenDRIVE
+`Waypoint.is_junction` / `is_intersection` is used only because the Leaderboard
+criterion uses it to locate its infraction boundary.
 
-## Top-Level Record
+## Versioned constants
+
+| Constant | Value |
+| --- | ---: |
+| Trigger extent ratio | 0.9 |
+| Trigger sample step | 1.0 m |
+| Boundary traversal step | 0.5 m |
+| Boundary half-width ratio | 0.4 lane width |
+| Maximum traversal | 400 steps |
+| Route inclusion window | -10.0 m to +80.0 m |
+| Route match radius | 4.0 m |
+| Stop-pose safety margin | 1.0 m |
+| Corridor extension | 3.0 m |
+| Corridor sample step | 0.5 m |
+
+Changing a geometry constant requires a new provenance string and schema
+version.
+
+## Top-level record
+
+Each `traffic_elements/<frame>.json` file contains:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "frame_id": "0000",
+  "map_name": "Town03_Opt",
   "ego": {},
-  "active_traffic_light_id": null,
+  "active_traffic_light_id": 123,
   "traffic_lights": [],
-  "stop_signs": [],
+  "stop_targets": [],
   "errors": []
 }
 ```
 
-### `schema_version`
+`frame_id` must equal the file stem. `errors` contains collection failures and
+must be empty for an accepted batch.
 
-Integer schema version. Readers must reject unsupported versions instead of
-guessing field semantics.
+## Traffic lights
 
-### `ego`
+Every nearby light retains:
 
-```json
-{
-  "actor_id": 1,
-  "location": {"x": 0.0, "y": 0.0, "z": 0.0},
-  "rotation": {"pitch": 0.0, "yaw": 0.0, "roll": 0.0},
-  "lane": {
-    "road_id": 7,
-    "section_id": 0,
-    "lane_id": -1,
-    "s": 12.5,
-    "lane_width": 3.5
-  }
-}
+- actor ID, CARLA type, state, world location, and rotation;
+- ego-relative forward/right/up position and relative heading;
+- trigger-volume geometry;
+- affected OpenDRIVE lanes;
+- `is_active_for_ego`, `controls_ego_lane`, and `relevant_to_ego`.
+
+An active light is retained even when its actor origin is outside the normal
+80 m actor radius. A nearby light that does not own the planned route remains
+useful visual hard-negative evidence, but it cannot create a stop target.
+
+Traffic-light records do not contain a stop-line field. CARLA
+`get_stop_waypoints()` is not used as a physical-line source.
+
+## Stop targets
+
+Only a traffic-light boundary associated with the dense planner route is
+included. Route association uses road, section, lane, heading, and cumulative
+route arc length.
+
+The stable ID is:
+
+```text
+<map>:<road_id>:<section_id>:<lane_id>:<boundary_s rounded to 0.1 m>
 ```
 
-`lane` is nullable when `Map.get_waypoint` fails. Such a failure is also added
-to `errors`.
+It never contains a run-specific actor ID. Multiple traffic-light actors that
+own the same lane boundary are grouped under one ID.
 
-### `active_traffic_light_id`
+Each target records:
 
-Actor ID returned by `Vehicle.get_traffic_light()`, or `null` when CARLA does
-not report an active light for the ego vehicle.
+- `owner_traffic_light_actor_ids` and `state_by_actor_id`;
+- `status`, `unknown_reason`, and `primary_for_ego`;
+- `route_lane` and geometry provenance;
+- `trigger_stop_waypoint`;
+- `leaderboard_infraction_boundary`, including center and endpoints;
+- `recommended_ego_stop_pose`;
+- vehicle front offset and 1.0 m safety margin;
+- `stop_evidence_corridor` centerline and lane width samples;
+- signed route distance, Euclidean distance, relative heading, and crossing
+  state;
+- trigger-to-boundary route distance and traversal diagnostics.
 
-### `errors`
+The recommended ego-center pose is upstream of the boundary by:
 
-Extraction errors are structured objects containing `field`, `error`, and,
-when applicable, `actor_id`. Missing optional geometry must create an error;
-it must not be silently converted into a negative label.
-
-If the ego waypoint is unavailable, stop-sign route relevance is not emitted.
-If a stop-sign waypoint traversal fails, that stop-sign item is omitted and the
-failure is recorded. Consumers must exclude frames with extraction errors from
-negative-label training unless the affected field is explicitly irrelevant to
-the task.
-
-## Traffic-Light Object
-
-Version 1 includes traffic lights whose actor origin is within 80 m of the ego
-vehicle, plus the CARLA-active light even if its actor origin is farther away.
-This is a collection radius, not a visibility claim; an item can be occluded,
-outside a camera view, or irrelevant to the ego lane.
-
-Each item in `traffic_lights` contains:
-
-| Field | Meaning |
-| --- | --- |
-| `actor_id`, `type_id` | CARLA actor identity |
-| `state` | CARLA state name such as `Red`, `Yellow`, `Green`, `Off`, or `Unknown` |
-| `location`, `rotation` | Actor pose in world coordinates |
-| `relative_position` | Actor pose origin in ego forward/right/up coordinates |
-| `relative_heading` | Actor yaw minus ego yaw, normalized to `[-180, 180)` degrees |
-| `distance` | Euclidean 3D distance from ego to actor origin in meters |
-| `trigger_volume` | Trigger center, extent, and rotation in world and ego coordinates |
-| `is_active_for_ego` | Actor ID equals `active_traffic_light_id` |
-| `controls_ego_lane` | Active for ego, or a stop/affected waypoint matches ego road/section/lane |
-| `relevant_to_ego` | Version 1 alias of `controls_ego_lane` |
-| `affected_lanes` | CARLA `get_affected_lane_waypoints()` metadata |
-| `stop_lines` | Cross-lane line segments derived from CARLA stop waypoints |
-
-`controls_ego_lane=false` does not mean the light is visually absent. It means
-the current version could not associate that nearby light with the ego lane.
-
-## Stop-Sign Object
-
-Version 1 applies the same 80 m actor-origin collection radius to stop signs.
-
-Each item in `stop_signs` contains:
-
-| Field | Meaning |
-| --- | --- |
-| `actor_id`, `type_id` | CARLA actor identity |
-| `location`, `rotation` | Actor pose in world coordinates |
-| `relative_position`, `relative_heading`, `distance` | Ego-relative geometry |
-| `trigger_volume` | Oriented CARLA trigger volume in world and ego coordinates |
-| `affects_ego_route` | A forward waypoint branch intersects the trigger volume within 30 m |
-| `stop_lines` | Zero or one derived route-entry line in schema version 1 |
-
-`affects_ego_route` is a route-horizon approximation. At a junction,
-`Waypoint.next()` can return several branches; version 1 checks all branches
-and may therefore mark a stop sign relevant before the final route branch is
-known. Training code should retain this provenance and may filter or refine it
-with the planned route.
-
-## Stop-Line Object
-
-```json
-{
-  "geometry_source": "carla_stop_waypoint",
-  "is_exact_carla_stop_position": true,
-  "road_id": 3,
-  "section_id": 0,
-  "lane_id": -1,
-  "s": 42.0,
-  "lane_width": 3.5,
-  "center": {"x": 12.0, "y": 4.0, "z": 0.0},
-  "left_endpoint": {"x": 12.0, "y": 2.25, "z": 0.0},
-  "right_endpoint": {"x": 12.0, "y": 5.75, "z": 0.0},
-  "relative_center": {"forward": 10.0, "right": 0.2, "up": 0.0},
-  "longitudinal_distance": 10.0,
-  "lateral_offset": 0.2,
-  "ego_before_line": true
-}
+```text
+bounding_box.location.x + bounding_box.extent.x + 1.0 m
 ```
 
-The example assumes a waypoint yaw of 0 degrees. In CARLA's left-handed
-coordinates the waypoint right vector is world `+Y`, so the left endpoint has
-the smaller `y` value.
+The signed route distance is authoritative. A target between -10 m and 0 m is
+retained as recently crossed. The nearest valid non-negative target is the
+only target allowed to set `primary_for_ego=true`.
 
-### Provenance: `carla_stop_waypoint`
+## Unknown policy
 
-Used only for waypoints returned by
-`TrafficLight.get_stop_waypoints()`. CARLA 0.9.16 documents these as stop
-positions computed from the traffic-light trigger boxes. This is the exact
-simulator-provided stop position available through the Python API.
+Ambiguous or incomplete geometry is stored with `status="unknown"` and an
+explicit reason such as:
 
-### Provenance: `trigger_volume_route_entry_approximation`
+- `waypoint_branch`;
+- `waypoint_loop`;
+- `intersection_not_found`;
+- `direction_mismatch`;
+- `route_lane_not_found`;
+- `route_light_ambiguous`;
+- `trigger_waypoint_unavailable`.
 
-Used for stop signs because `carla.TrafficSign` has no
-`get_stop_waypoints()` API. The collector walks forward waypoints, finds the
-first point inside the oriented trigger volume, and uses the preceding
-waypoint as the stop-line center. This is a derived training label and sets
-`is_exact_carla_stop_position=false`.
+Unknown geometry is never converted into either a positive or a hard negative.
+Missing route context produces no synthetic negative target.
 
-The approximation must be audited visually before model training. It can be
-replaced in a later schema version by route-aware map geometry without changing
-the meaning of existing records.
+## Forbidden legacy content
 
-## Legacy Affordances
+Schema v2 rejects any generated JSON containing a key with the fragment
+`stop_sign`, an actor value beginning with `traffic.stop`, or the legacy
+provenance `trigger_volume_route_entry_approximation`. This explicitly covers
+roadside red signs, road-surface `STOP` text, old sign actors, and old
+sign-derived approximate lines.
 
-The collector derives:
+The audit scans JSON under `traffic_elements`, `traffic_element_views`,
+`measurements`, `affordances`, `3d_bbs`, `2d_bbs_*`, and `other_actors`. It does
+not scan raw images, lidar arrays, logs, results, or documentation.
 
-```json
-{
-  "traffic_light": "Red",
-  "stop_sign": true,
-  "hazard_vehicle": false,
-  "hazard_pedestrian": false
-}
-```
+## Validation
 
-- `traffic_light` is the state of the CARLA-active traffic light, otherwise
-  `null`.
-- `stop_sign` is true when any collected stop sign has
-  `affects_ego_route=true`.
-- Vehicle and pedestrian hazards retain their existing collector logic.
-
-New training code should read `traffic_elements` directly. The legacy file is
-kept only for compatibility with the current dataset loader.
-
-## Audit Command
+From the repository root:
 
 ```bash
-/data1/shijj/conda_envs/interfuser_origin/bin/python \
-  tools/data/audit_traffic_element_labels.py <dataset-or-route-root>
+python tools/data/audit_traffic_element_labels.py <dataset-root>
 ```
 
-The command rejects missing files, invalid JSON, unsupported schema versions,
-malformed nested geometry, non-finite stop-line values, provenance mismatches,
-inconsistent active-light or stop-sign relevance fields, and missing RGB/label
-frame pairs. It reports state counts, route relevance, exact traffic-light stop
-lines, approximate stop-sign stop lines, stop-sign frame and unique-actor
-counts, and frames containing extraction errors.
+The audit enforces schema version, frame alignment, stable IDs, owner-light
+references, provenance, finite geometry, finite signed distances, unique
+primary selection, explained unknowns, and zero forbidden occurrences.

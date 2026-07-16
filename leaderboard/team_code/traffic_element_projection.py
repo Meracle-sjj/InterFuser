@@ -588,6 +588,12 @@ def _unknown_target_view(target, reason):
         "status": "unknown",
         "unknown_reason": reason,
         "geometry_unknown_reason": target.get("unknown_reason"),
+        "signed_route_distance_m": target.get("signed_route_distance_m"),
+        "trigger_waypoint": {
+            "projection_status": "unknown",
+            "image_point": None,
+            "camera_forward_depth_m": None,
+        },
         "boundary": {
             "projection_status": "unknown",
             "projected_endpoints": None,
@@ -820,7 +826,13 @@ def _project_target_camera(target, camera, intrinsic, depth_m):
         "status": "available",
         "unknown_reason": None,
         "geometry_unknown_reason": None,
+        "signed_route_distance_m": float(target["signed_route_distance_m"]),
     }
+    result["trigger_waypoint"] = _project_point(
+        _dict_location(target["trigger_stop_waypoint"]["location"]),
+        camera,
+        intrinsic,
+    )
     boundary = target["leaderboard_infraction_boundary"]
     result["boundary"] = _project_segment(
         np.asarray(

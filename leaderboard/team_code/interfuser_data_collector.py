@@ -263,6 +263,7 @@ class InterfuserDataCollector(AutonomousAgent):
             route_waypoints=self._traffic_route_waypoints,
         )
         camera_frames = self._get_traffic_element_camera_frames(input_data)
+        lidar_frame = self._get_traffic_element_lidar_frame(input_data, hero)
         relevant_actor_ids = {
             int(item["actor_id"])
             for item in traffic_elements["traffic_lights"]
@@ -277,6 +278,7 @@ class InterfuserDataCollector(AutonomousAgent):
             traffic_elements=traffic_elements,
             actors_by_id=actors_by_id,
             camera_frames=camera_frames,
+            lidar_frame=lidar_frame,
         )
 
         # 1. RGB images (400x300)
@@ -370,6 +372,18 @@ class InterfuserDataCollector(AutonomousAgent):
                 "fov_degrees": 100.0,
             }
         return frames
+
+    def _get_traffic_element_lidar_frame(self, input_data, hero):
+        """Build aligned lidar evidence without synthesizing missing sensors."""
+        sensor_objects = getattr(self.sensor_interface, "_sensors_objects", {})
+        sensor = sensor_objects.get("lidar")
+        if sensor is None or "lidar" not in input_data:
+            return {"error": "required sensor unavailable: lidar"}
+        return {
+            "transform": sensor.get_transform(),
+            "ego_transform": hero.get_transform(),
+            "points": input_data["lidar"][1],
+        }
 
     @staticmethod
     def _write_json_atomic(path, record):

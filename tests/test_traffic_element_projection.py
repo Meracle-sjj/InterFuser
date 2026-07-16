@@ -1,12 +1,15 @@
+import copy
+import json
 import math
 import unittest
 
 import numpy as np
 
 from team_code.traffic_element_projection import (
-    ASSOCIATION,
+    EVIDENCE,
     IMAGE_SCHEMA_VERSION,
     associate_semantic_box,
+    build_lidar_target_evidence,
     build_traffic_element_view_record,
     camera_intrinsics,
     clip_image_segment,
@@ -15,6 +18,7 @@ from team_code.traffic_element_projection import (
     projected_roi,
     transform_matrix,
     world_to_camera,
+    world_to_sensor_xyz,
 )
 
 
@@ -72,9 +76,38 @@ class FakeTrafficLightActor(FakeActor):
         return list(self._light_boxes)
 
 
-def _phase1_record():
+def _valid_stop_target():
     return {
-        "schema_version": 1,
+        "target_id": "Town01_Opt:3:0:-1:10.0",
+        "status": "valid",
+        "unknown_reason": None,
+        "geometry_source": "scenario_runner_running_red_light_test_v1",
+        "owner_traffic_light_actor_ids": [11],
+        "leaderboard_infraction_boundary": {
+            "left_endpoint": {"x": 10.0, "y": -1.0, "z": 0.0},
+            "right_endpoint": {"x": 10.0, "y": 1.0, "z": 0.0},
+        },
+        "recommended_ego_stop_pose": {
+            "location": {"x": 7.0, "y": 0.0, "z": 0.0},
+            "rotation": {"pitch": 0.0, "yaw": 0.0, "roll": 0.0},
+        },
+        "stop_evidence_corridor": {
+            "centerline": [
+                {
+                    "location": {"x": x, "y": 0.0, "z": 0.0},
+                    "lane_width": 4.0,
+                }
+                for x in (8.0, 10.0, 12.0)
+            ],
+        },
+    }
+
+
+def _phase2_record(target=None):
+    return {
+        "schema_version": 2,
+        "frame_id": "0052",
+        "map_name": "Town01_Opt",
         "ego": {
             "actor_id": 1,
             "location": {"x": 0.0, "y": 0.0, "z": 0.0},
@@ -90,18 +123,9 @@ def _phase1_record():
                 "controls_ego_lane": True,
                 "relevant_to_ego": True,
                 "location": {"x": 20.0, "y": 0.0, "z": 0.0},
-                "stop_lines": [
-                    {
-                        "geometry_source": "carla_stop_waypoint",
-                        "left_endpoint": {"x": 10.0, "y": -1.0, "z": 0.0},
-                        "right_endpoint": {"x": 10.0, "y": 1.0, "z": 0.0},
-                        "longitudinal_distance": 10.0,
-                        "ego_before_line": True,
-                    }
-                ],
             }
         ],
-        "stop_signs": [],
+        "stop_targets": [target or _valid_stop_target()],
         "errors": [],
     }
 
@@ -118,6 +142,23 @@ def _camera_frame():
         "width": 12,
         "height": 10,
         "fov_degrees": 90.0,
+    }
+
+
+def _lidar_frame(points=None):
+    if points is None:
+        points = np.array(
+            [
+                [10.0, 0.0, 0.0, 1.0],
+                [10.0, 0.0, 1.0, 1.0],
+                [10.0, 8.0, 0.0, 1.0],
+            ],
+            dtype=np.float32,
+        )
+    return {
+        "transform": FakeTransform(),
+        "ego_transform": FakeTransform(),
+        "points": points,
     }
 
 
@@ -180,9 +221,10 @@ class ProjectionMathTests(unittest.TestCase):
 
 class AssociationTests(unittest.TestCase):
     def test_association_uses_carla_0916_semantic_tags(self):
-        self.assertEqual(IMAGE_SCHEMA_VERSION, 2)
-        self.assertEqual(ASSOCIATION["traffic_light"]["semantic_tag"], 7)
-        self.assertEqual(ASSOCIATION["stop_sign"]["semantic_tag"], 8)
+        self.assertEqual(IMAGE_SCHEMA_VERSION, 3)
+        self.assertEqual(EVIDENCE["traffic_light"]["semantic_tag"], 7)
+        self.assertEqual(EVIDENCE["road_lines_semantic_tag"], 24)
+        self.assertNotIn("stop_sign", EVIDENCE)
 
     def test_projected_roi_clips_and_expands_visible_vertices(self):
         camera = FakeTransform()
@@ -274,7 +316,7 @@ class AssociationTests(unittest.TestCase):
         self.assertEqual(result["bbox_xyxy"], [0, 0, 2, 1])
         self.assertEqual(result["semantic_pixel_count"], 2)
 
-    def test_stop_line_segment_is_clipped_to_image(self):
+    def test_transverse_segment_is_clipped_to_image(self):
         self.assertEqual(
             clip_image_segment((-10.0, 5.0), (20.0, 5.0), 12, 10),
             [[0.0, 5.0], [11.0, 5.0]],
@@ -299,7 +341,7 @@ class AssociationTests(unittest.TestCase):
             self.assertTrue(0.0 <= point[1] <= 299.0)
 
 
-class ViewRecordTests(unittest.TestCase):
+class EvidenceSchemaV3Tests(unittest.TestCase):
     def setUp(self):
         self.vertices = [
             FakeLocation(20.0, -4.0, -4.0),
@@ -308,15 +350,34 @@ class ViewRecordTests(unittest.TestCase):
             FakeLocation(20.0, 4.0, 4.0),
         ]
 
-    def test_visible_light_preserves_phase1_semantics(self):
-        record = build_traffic_element_view_record(
+    def _build_view(self, target=None, camera=None, lidar=None):
+        return build_traffic_element_view_record(
             frame_id="0052",
-            traffic_elements=_phase1_record(),
+            traffic_elements=_phase2_record(target),
             actors_by_id={11: FakeActor(11, self.vertices)},
-            camera_frames={"front": _camera_frame()},
+            camera_frames={"front": camera or _camera_frame()},
+            lidar_frame=lidar or _lidar_frame(),
         )
 
-        self.assertEqual(record["schema_version"], 2)
+    def test_v3_has_traffic_lights_targets_and_no_stop_sign_keys(self):
+        record = self._build_view()
+
+        self.assertEqual(IMAGE_SCHEMA_VERSION, 3)
+        self.assertEqual(record["schema_version"], 3)
+        self.assertEqual(record["source_traffic_element_schema_version"], 2)
+        self.assertEqual(len(record["cameras"]["front"]["stop_targets"]), 1)
+        self.assertNotIn("stop_sign", json.dumps(record).lower())
+
+    def test_visible_light_preserves_phase2_semantics(self):
+        record = build_traffic_element_view_record(
+            frame_id="0052",
+            traffic_elements=_phase2_record(),
+            actors_by_id={11: FakeActor(11, self.vertices)},
+            camera_frames={"front": _camera_frame()},
+            lidar_frame=_lidar_frame(),
+        )
+
+        self.assertEqual(record["schema_version"], 3)
         self.assertEqual(record["frame_id"], "0052")
         light = record["cameras"]["front"]["traffic_lights"][0]
         self.assertEqual(light["actor_id"], 11)
@@ -340,40 +401,84 @@ class ViewRecordTests(unittest.TestCase):
 
         record = build_traffic_element_view_record(
             "0052",
-            _phase1_record(),
+            _phase2_record(),
             {11: actor},
             {"front": _camera_frame()},
+            lidar_frame=_lidar_frame(),
         )
 
         light = record["cameras"]["front"]["traffic_lights"][0]
         self.assertEqual(light["visibility"], "visible")
         self.assertEqual(light["geometry_source"], "traffic_light_boxes")
 
-    def test_stop_line_preserves_provenance_and_distance(self):
-        record = build_traffic_element_view_record(
-            "0052",
-            _phase1_record(),
-            {11: FakeActor(11, self.vertices)},
-            {"front": _camera_frame()},
-        )
+    def test_camera_projects_boundary_pose_and_corridor(self):
+        target = self._build_view()["cameras"]["front"]["stop_targets"][0]
 
-        stop_line = record["cameras"]["front"]["stop_lines"][0]
-        self.assertEqual(stop_line["owner_actor_id"], 11)
+        self.assertEqual(target["boundary"]["projection_status"], "projected")
+        self.assertIsNotNone(target["boundary"]["image_segment"])
         self.assertEqual(
-            stop_line["geometry_source"],
-            "carla_stop_waypoint",
+            target["recommended_stop_pose"]["projection_status"],
+            "projected",
         )
-        self.assertEqual(stop_line["longitudinal_distance"], 10.0)
-        self.assertTrue(stop_line["ego_before_line"])
-        self.assertEqual(stop_line["projection_status"], "projected")
-        self.assertIsNotNone(stop_line["image_segment"])
+        self.assertGreaterEqual(len(target["corridor"]["image_polyline"]), 2)
+        self.assertGreaterEqual(len(target["corridor"]["image_envelope"]), 4)
+
+    def test_camera_depth_support_is_counted_per_corridor_sample(self):
+        camera = _camera_frame()
+        camera["depth_m"][:] = 10.0
+
+        corridor = self._build_view(camera=camera)["cameras"]["front"][
+            "stop_targets"
+        ][0]["corridor"]
+
+        self.assertGreater(corridor["finite_depth_sample_count"], 0)
+        self.assertGreater(corridor["depth_supported_sample_count"], 0)
+        self.assertIsNotNone(corridor["median_depth_residual_m"])
+        self.assertEqual(corridor["occlusion_status"], "supported")
+
+    def test_finite_inconsistent_depth_marks_corridor_occluded(self):
+        corridor = self._build_view()["cameras"]["front"]["stop_targets"][0][
+            "corridor"
+        ]
+
+        self.assertGreater(corridor["finite_depth_sample_count"], 0)
+        self.assertEqual(corridor["depth_supported_sample_count"], 0)
+        self.assertEqual(corridor["occlusion_status"], "occluded")
+
+    def test_outside_image_target_is_known_not_unknown(self):
+        target = copy.deepcopy(_valid_stop_target())
+        for endpoint in target["leaderboard_infraction_boundary"].values():
+            endpoint["y"] += 100.0
+        target["recommended_ego_stop_pose"]["location"]["y"] += 100.0
+        for sample in target["stop_evidence_corridor"]["centerline"]:
+            sample["location"]["y"] += 100.0
+
+        view = self._build_view(target=target)["cameras"]["front"]["stop_targets"][0]
+
+        self.assertEqual(view["status"], "available")
+        self.assertEqual(view["boundary"]["projection_status"], "outside_image")
+        self.assertEqual(view["corridor"]["projection_status"], "outside_image")
+
+    def test_behind_camera_target_is_reported(self):
+        target = copy.deepcopy(_valid_stop_target())
+        for endpoint in target["leaderboard_infraction_boundary"].values():
+            endpoint["x"] *= -1.0
+        target["recommended_ego_stop_pose"]["location"]["x"] *= -1.0
+        for sample in target["stop_evidence_corridor"]["centerline"]:
+            sample["location"]["x"] *= -1.0
+
+        view = self._build_view(target=target)["cameras"]["front"]["stop_targets"][0]
+
+        self.assertEqual(view["boundary"]["projection_status"], "behind_camera")
+        self.assertEqual(view["corridor"]["projection_status"], "behind_camera")
 
     def test_missing_actor_is_unknown_not_negative(self):
         record = build_traffic_element_view_record(
             "0052",
-            _phase1_record(),
+            _phase2_record(),
             {},
             {"front": _camera_frame()},
+            lidar_frame=_lidar_frame(),
         )
 
         light = record["cameras"]["front"]["traffic_lights"][0]
@@ -385,9 +490,10 @@ class ViewRecordTests(unittest.TestCase):
     def test_missing_camera_evidence_is_unknown(self):
         record = build_traffic_element_view_record(
             "0052",
-            _phase1_record(),
+            _phase2_record(),
             {11: FakeActor(11, self.vertices)},
             {"front": {"error": "required sensor unavailable"}},
+            lidar_frame=_lidar_frame(),
         )
 
         light = record["cameras"]["front"]["traffic_lights"][0]
@@ -397,6 +503,70 @@ class ViewRecordTests(unittest.TestCase):
             record["cameras"]["front"]["errors"],
             ["required sensor unavailable"],
         )
+        target = record["cameras"]["front"]["stop_targets"][0]
+        self.assertEqual(target["status"], "unknown")
+        self.assertEqual(target["unknown_reason"], "sensor_unavailable")
+
+    def test_unknown_geometry_stays_unknown_for_camera_and_lidar(self):
+        target = copy.deepcopy(_valid_stop_target())
+        target["status"] = "unknown"
+        target["unknown_reason"] = "waypoint_branch"
+
+        record = self._build_view(target=target)
+
+        camera_target = record["cameras"]["front"]["stop_targets"][0]
+        lidar_target = record["lidar"]["targets"][0]
+        self.assertEqual(camera_target["status"], "unknown")
+        self.assertEqual(camera_target["unknown_reason"], "geometry_unknown")
+        self.assertEqual(lidar_target["status"], "unknown")
+        self.assertEqual(lidar_target["unknown_reason"], "geometry_unknown")
+
+    def test_lidar_counts_corridor_and_surface_band_points(self):
+        evidence = build_lidar_target_evidence(
+            _valid_stop_target(),
+            points=_lidar_frame()["points"],
+            lidar_transform=FakeTransform(),
+            ego_transform=FakeTransform(),
+        )
+
+        self.assertEqual(evidence["status"], "available")
+        self.assertEqual(evidence["in_corridor_point_count"], 2)
+        self.assertEqual(evidence["road_surface_point_count"], 1)
+
+    def test_world_to_sensor_transform_round_trip(self):
+        sensor = FakeTransform(
+            FakeLocation(2.0, 0.0, 0.0),
+            FakeRotation(yaw=90.0),
+        )
+        world = np.array([[2.0, 1.0, 0.0]])
+        local = world_to_sensor_xyz(world, sensor)
+        homogeneous = np.column_stack([local, np.ones(len(local))])
+        restored = (transform_matrix(sensor) @ homogeneous.T).T[:, :3]
+
+        np.testing.assert_allclose(local, [[1.0, 0.0, 0.0]], atol=1e-6)
+        np.testing.assert_allclose(restored, world, atol=1e-6)
+
+    def test_missing_lidar_is_unknown(self):
+        evidence = build_lidar_target_evidence(
+            _valid_stop_target(),
+            points=None,
+            lidar_transform=None,
+            ego_transform=None,
+        )
+
+        self.assertEqual(evidence["status"], "unknown")
+        self.assertEqual(evidence["unknown_reason"], "sensor_unavailable")
+
+    def test_non_finite_lidar_points_are_unknown(self):
+        evidence = build_lidar_target_evidence(
+            _valid_stop_target(),
+            points=np.array([[np.nan, 0.0, 0.0, 1.0]]),
+            lidar_transform=FakeTransform(),
+            ego_transform=FakeTransform(),
+        )
+
+        self.assertEqual(evidence["status"], "unknown")
+        self.assertEqual(evidence["unknown_reason"], "projection_error")
 
 
 if __name__ == "__main__":

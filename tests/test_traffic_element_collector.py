@@ -71,15 +71,21 @@ class TrafficElementCollectorTests(unittest.TestCase):
         collector.save_freq = 10
         route_marker = SimpleNamespace(name="route-waypoint")
         collector._traffic_route_waypoints = [route_marker]
-        sensor = SimpleNamespace(get_transform=lambda: SimpleNamespace())
+        camera_transform = SimpleNamespace(name="camera-transform")
+        lidar_transform = SimpleNamespace(name="lidar-transform")
+        ego_transform = SimpleNamespace(name="ego-transform")
+        camera_sensor = SimpleNamespace(get_transform=lambda: camera_transform)
+        lidar_sensor = SimpleNamespace(get_transform=lambda: lidar_transform)
         collector.sensor_interface = SimpleNamespace(
             _sensors_objects={
-                "seg_front": sensor,
-                "seg_left": sensor,
-                "seg_right": sensor,
+                "seg_front": camera_sensor,
+                "seg_left": camera_sensor,
+                "seg_right": camera_sensor,
+                "lidar": lidar_sensor,
             }
         )
         world = SimpleNamespace(get_actors=lambda: [])
+        hero = SimpleNamespace(get_transform=lambda: ego_transform)
         phase1 = {
             "schema_version": 2,
             "frame_id": "0000",
@@ -97,6 +103,7 @@ class TrafficElementCollectorTests(unittest.TestCase):
             "cameras": {},
             "errors": [],
         }
+        input_data = self._input_data()
 
         with tempfile.TemporaryDirectory() as tmp:
             collector.save_path = Path(tmp)
@@ -104,7 +111,7 @@ class TrafficElementCollectorTests(unittest.TestCase):
             with patch.object(
                 collector_module.CarlaDataProvider,
                 "get_hero_actor",
-                return_value=SimpleNamespace(),
+                return_value=hero,
             ), patch.object(
                 collector_module.CarlaDataProvider,
                 "get_world",
@@ -144,12 +151,16 @@ class TrafficElementCollectorTests(unittest.TestCase):
                 return_value={},
             ):
                 collector._save_all_data(
-                    self._input_data(),
+                    input_data,
                     control=None,
                     timestamp=0.0,
                 )
 
             build_views.assert_called_once()
+            lidar_frame = build_views.call_args.kwargs["lidar_frame"]
+            self.assertIs(lidar_frame["transform"], lidar_transform)
+            self.assertIs(lidar_frame["ego_transform"], ego_transform)
+            self.assertIs(lidar_frame["points"], input_data["lidar"][1])
             collect_labels.assert_called_once_with(
                 ANY,
                 world,
@@ -162,6 +173,17 @@ class TrafficElementCollectorTests(unittest.TestCase):
             final_path = collector.save_path / "traffic_element_views" / "0000.json"
             self.assertTrue(final_path.exists())
             self.assertFalse(final_path.with_suffix(".json.tmp").exists())
+
+    def test_missing_lidar_frame_is_explicitly_unknown(self):
+        collector = object.__new__(collector_module.InterfuserDataCollector)
+        collector.sensor_interface = SimpleNamespace(_sensors_objects={})
+
+        frame = collector._get_traffic_element_lidar_frame(
+            {},
+            SimpleNamespace(get_transform=lambda: SimpleNamespace()),
+        )
+
+        self.assertEqual(frame, {"error": "required sensor unavailable: lidar"})
 
 
 if __name__ == "__main__":

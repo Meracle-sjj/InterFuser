@@ -5,19 +5,23 @@ import math
 import numpy as np
 
 
-IMAGE_SCHEMA_VERSION = 2
-ASSOCIATION = {
+IMAGE_SCHEMA_VERSION = 3
+EVIDENCE = {
     "roi_expand_pixels": 6,
     "minimum_semantic_pixels": 3,
     "traffic_light": {
         "semantic_tag": 7,
         "depth_tolerance_m": 4.0,
     },
-    "stop_sign": {
-        "semantic_tag": 8,
-        "depth_tolerance_m": 6.0,
-    },
+    "road_lines_semantic_tag": 24,
+    "corridor_depth_tolerance_m": 2.0,
+    "lidar_min_height_m": -0.5,
+    "lidar_max_height_m": 3.0,
+    "lidar_road_surface_tolerance_m": 0.25,
 }
+
+# Kept as a temporary import compatibility alias for audit tooling migrated later.
+ASSOCIATION = EVIDENCE
 
 
 def camera_intrinsics(width, height, fov_degrees):
@@ -78,6 +82,17 @@ def world_to_camera(world_points, camera_transform):
     homogeneous = np.column_stack([points, np.ones(len(points))])
     world_to_sensor = np.linalg.inv(transform_matrix(camera_transform))
     return (world_to_sensor @ homogeneous.T).T[:, :3]
+
+
+def world_to_sensor_xyz(world_points, sensor_transform):
+    """Transform Nx3 CARLA world points into a sensor's local axes."""
+    points = np.asarray(world_points, dtype=np.float64)
+    if points.ndim != 2 or points.shape[1] != 3:
+        raise ValueError("world_points must have shape Nx3")
+    homogeneous = np.column_stack([points, np.ones(len(points))])
+    return (
+        np.linalg.inv(transform_matrix(sensor_transform)) @ homogeneous.T
+    ).T[:, :3]
 
 
 def project_camera_points(camera_points, intrinsic):
@@ -381,7 +396,7 @@ def _build_element_view(
             intrinsic,
             camera["width"],
             camera["height"],
-            ASSOCIATION["roi_expand_pixels"],
+            EVIDENCE["roi_expand_pixels"],
         )
         camera_location = np.array(
             [
@@ -395,7 +410,7 @@ def _build_element_view(
             geometry_centers - camera_location,
             axis=1,
         )
-        settings = ASSOCIATION[element_type]
+        settings = EVIDENCE[element_type]
         associated = associate_semantic_box(
             roi,
             camera["semantic"],
@@ -403,7 +418,7 @@ def _build_element_view(
             actor_distances,
             settings["semantic_tag"],
             settings["depth_tolerance_m"],
-            ASSOCIATION["minimum_semantic_pixels"],
+            EVIDENCE["minimum_semantic_pixels"],
         )
     except Exception as exc:
         result["association_source"] = "projection_error"
@@ -420,31 +435,45 @@ def _build_element_view(
     return result, None
 
 
-def _project_stop_line(
-    line,
-    owner_actor_id,
-    owner_type,
-    camera,
-    intrinsic,
-):
+def _unknown_target_view(target, reason):
+    return {
+        "target_id": str(target["target_id"]),
+        "geometry_source": target.get("geometry_source"),
+        "owner_traffic_light_actor_ids": list(
+            target.get("owner_traffic_light_actor_ids", [])
+        ),
+        "status": "unknown",
+        "unknown_reason": reason,
+        "geometry_unknown_reason": target.get("unknown_reason"),
+        "boundary": {
+            "projection_status": "unknown",
+            "projected_endpoints": None,
+            "image_segment": None,
+        },
+        "recommended_stop_pose": {
+            "projection_status": "unknown",
+            "image_point": None,
+            "camera_forward_depth_m": None,
+        },
+        "corridor": {
+            "projection_status": "unknown",
+            "image_polyline": [],
+            "image_envelope": [],
+            "finite_depth_sample_count": 0,
+            "depth_supported_sample_count": 0,
+            "median_depth_residual_m": None,
+            "occlusion_status": "unknown",
+        },
+    }
+
+
+def _project_segment(world_points, camera, intrinsic):
     result = {
-        "owner_actor_id": int(owner_actor_id),
-        "owner_type": owner_type,
-        "geometry_source": line["geometry_source"],
-        "longitudinal_distance": float(line["longitudinal_distance"]),
-        "ego_before_line": bool(line["ego_before_line"]),
+        "projection_status": "unknown",
         "projected_endpoints": None,
         "image_segment": None,
-        "projection_status": "not_projected",
     }
-    points = np.array(
-        [
-            _dict_location(line["left_endpoint"]),
-            _dict_location(line["right_endpoint"]),
-        ],
-        dtype=np.float64,
-    )
-    camera_points = world_to_camera(points, camera["transform"])
+    camera_points = world_to_camera(world_points, camera["transform"])
     pixels, in_front = project_camera_points(camera_points, intrinsic)
     if not bool(np.all(in_front)):
         result["projection_status"] = "behind_camera"
@@ -459,8 +488,294 @@ def _project_stop_line(
         camera["height"],
     )
     result["image_segment"] = segment
-    result["projection_status"] = "projected" if segment is not None else "outside_image"
+    result["projection_status"] = (
+        "projected" if segment is not None else "outside_image"
+    )
     return result
+
+
+def _project_point(world_point, camera, intrinsic):
+    camera_points = world_to_camera(
+        np.asarray(world_point, dtype=np.float64).reshape(1, 3),
+        camera["transform"],
+    )
+    pixels, in_front = project_camera_points(camera_points, intrinsic)
+    result = {
+        "projection_status": "behind_camera",
+        "image_point": None,
+        "camera_forward_depth_m": float(camera_points[0, 0]),
+    }
+    if not bool(in_front[0]):
+        return result
+
+    pixel = pixels[0]
+    result["image_point"] = pixel.tolist()
+    inside = (
+        0.0 <= pixel[0] < float(camera["width"])
+        and 0.0 <= pixel[1] < float(camera["height"])
+    )
+    result["projection_status"] = "projected" if inside else "outside_image"
+    return result
+
+
+def _corridor_edges(target, centerline, locations):
+    fallback_yaw = float(
+        target.get("recommended_ego_stop_pose", {})
+        .get("rotation", {})
+        .get("yaw", 0.0)
+    )
+    fallback = np.array(
+        [math.cos(math.radians(fallback_yaw)), math.sin(math.radians(fallback_yaw))]
+    )
+    left = []
+    right = []
+    for index, (sample, location) in enumerate(zip(centerline, locations)):
+        if len(locations) == 1:
+            tangent = fallback
+        elif index == 0:
+            tangent = locations[1, :2] - location[:2]
+        elif index == len(locations) - 1:
+            tangent = location[:2] - locations[index - 1, :2]
+        else:
+            tangent = locations[index + 1, :2] - locations[index - 1, :2]
+        norm = float(np.linalg.norm(tangent))
+        tangent = fallback if norm <= 1e-9 else tangent / norm
+        normal = np.array([-tangent[1], tangent[0]], dtype=np.float64)
+        half_width = float(sample["lane_width"]) / 2.0
+        left.append(
+            [
+                location[0] + normal[0] * half_width,
+                location[1] + normal[1] * half_width,
+                location[2],
+            ]
+        )
+        right.append(
+            [
+                location[0] - normal[0] * half_width,
+                location[1] - normal[1] * half_width,
+                location[2],
+            ]
+        )
+    return np.asarray(left), np.asarray(right)
+
+
+def _visible_pixel_indices(pixels, in_front, width, height):
+    finite = np.isfinite(pixels).all(axis=1)
+    inside = (
+        in_front
+        & finite
+        & (pixels[:, 0] >= 0.0)
+        & (pixels[:, 0] < float(width))
+        & (pixels[:, 1] >= 0.0)
+        & (pixels[:, 1] < float(height))
+    )
+    return np.flatnonzero(inside)
+
+
+def _project_corridor(target, camera, intrinsic, depth_m):
+    centerline = list(target["stop_evidence_corridor"]["centerline"])
+    if not centerline:
+        raise ValueError("corridor centerline is empty")
+    locations = np.asarray(
+        [_dict_location(sample["location"]) for sample in centerline],
+        dtype=np.float64,
+    )
+    camera_points = world_to_camera(locations, camera["transform"])
+    pixels, in_front = project_camera_points(camera_points, intrinsic)
+    visible = _visible_pixel_indices(
+        pixels,
+        in_front,
+        camera["width"],
+        camera["height"],
+    )
+
+    left, right = _corridor_edges(target, centerline, locations)
+    left_pixels, left_front = project_camera_points(
+        world_to_camera(left, camera["transform"]),
+        intrinsic,
+    )
+    right_pixels, right_front = project_camera_points(
+        world_to_camera(right, camera["transform"]),
+        intrinsic,
+    )
+    left_visible = _visible_pixel_indices(
+        left_pixels,
+        left_front,
+        camera["width"],
+        camera["height"],
+    )
+    right_visible = _visible_pixel_indices(
+        right_pixels,
+        right_front,
+        camera["width"],
+        camera["height"],
+    )
+
+    residuals = []
+    supported = 0
+    for index in visible:
+        x = int(np.clip(round(float(pixels[index, 0])), 0, camera["width"] - 1))
+        y = int(np.clip(round(float(pixels[index, 1])), 0, camera["height"] - 1))
+        measured = float(depth_m[y, x])
+        if not math.isfinite(measured):
+            continue
+        residual = abs(measured - float(camera_points[index, 0]))
+        residuals.append(residual)
+        if residual <= float(EVIDENCE["corridor_depth_tolerance_m"]):
+            supported += 1
+
+    if supported:
+        occlusion = "supported"
+    elif residuals:
+        occlusion = "occluded"
+    elif len(visible):
+        occlusion = "no_finite_depth"
+    elif bool(np.any(in_front)):
+        occlusion = "outside_image"
+    else:
+        occlusion = "behind_camera"
+
+    if len(visible):
+        projection_status = "projected"
+    elif bool(np.any(in_front)):
+        projection_status = "outside_image"
+    else:
+        projection_status = "behind_camera"
+    return {
+        "projection_status": projection_status,
+        "image_polyline": pixels[visible].tolist(),
+        "image_envelope": (
+            left_pixels[left_visible].tolist()
+            + right_pixels[right_visible][::-1].tolist()
+        ),
+        "projected_sample_count": int(len(visible)),
+        "finite_depth_sample_count": int(len(residuals)),
+        "depth_supported_sample_count": int(supported),
+        "median_depth_residual_m": (
+            float(np.median(residuals)) if residuals else None
+        ),
+        "occlusion_status": occlusion,
+    }
+
+
+def _project_target_camera(target, camera, intrinsic, depth_m):
+    if target.get("status") != "valid":
+        return _unknown_target_view(target, "geometry_unknown")
+    result = {
+        "target_id": str(target["target_id"]),
+        "geometry_source": target.get("geometry_source"),
+        "owner_traffic_light_actor_ids": list(
+            target.get("owner_traffic_light_actor_ids", [])
+        ),
+        "status": "available",
+        "unknown_reason": None,
+        "geometry_unknown_reason": None,
+    }
+    boundary = target["leaderboard_infraction_boundary"]
+    result["boundary"] = _project_segment(
+        np.asarray(
+            [
+                _dict_location(boundary["left_endpoint"]),
+                _dict_location(boundary["right_endpoint"]),
+            ]
+        ),
+        camera,
+        intrinsic,
+    )
+    result["recommended_stop_pose"] = _project_point(
+        _dict_location(target["recommended_ego_stop_pose"]["location"]),
+        camera,
+        intrinsic,
+    )
+    result["corridor"] = _project_corridor(
+        target,
+        camera,
+        intrinsic,
+        depth_m,
+    )
+    return result
+
+
+def build_lidar_target_evidence(
+    target,
+    points,
+    lidar_transform,
+    ego_transform,
+):
+    """Count lidar returns inside a route-associated stop-evidence corridor."""
+    target_id = str(target["target_id"])
+    if target.get("status") != "valid":
+        return {
+            "target_id": target_id,
+            "status": "unknown",
+            "unknown_reason": "geometry_unknown",
+        }
+    if points is None or lidar_transform is None or ego_transform is None:
+        return {
+            "target_id": target_id,
+            "status": "unknown",
+            "unknown_reason": "sensor_unavailable",
+        }
+
+    try:
+        raw = np.asarray(points, dtype=np.float64)
+        if (
+            raw.ndim != 2
+            or raw.shape[1] < 3
+            or not np.isfinite(raw[:, :3]).all()
+        ):
+            raise ValueError("lidar points must be finite Nx3 or Nx4")
+        samples = list(target["stop_evidence_corridor"]["centerline"])
+        if not samples:
+            raise ValueError("corridor centerline is empty")
+        world_centerline = np.asarray(
+            [
+                [sample["location"][axis] for axis in ("x", "y", "z")]
+                for sample in samples
+            ],
+            dtype=np.float64,
+        )
+        centerline = world_to_sensor_xyz(world_centerline, lidar_transform)
+        delta = raw[:, np.newaxis, :3] - centerline[np.newaxis, :, :]
+        nearest = np.argmin(np.sum(delta[:, :, :2] ** 2, axis=2), axis=1)
+        nearest_delta = delta[np.arange(len(raw)), nearest]
+        widths = np.asarray(
+            [float(sample["lane_width"]) / 2.0 for sample in samples]
+        )
+        lateral = np.linalg.norm(nearest_delta[:, :2], axis=1)
+        relative_z = nearest_delta[:, 2]
+        inside = (
+            (lateral <= widths[nearest])
+            & (relative_z >= float(EVIDENCE["lidar_min_height_m"]))
+            & (relative_z <= float(EVIDENCE["lidar_max_height_m"]))
+        )
+        surface = inside & (
+            np.abs(relative_z)
+            <= float(EVIDENCE["lidar_road_surface_tolerance_m"])
+        )
+        sensor_to_world = transform_matrix(lidar_transform)
+        ego_to_world = transform_matrix(ego_transform)
+    except Exception:
+        return {
+            "target_id": target_id,
+            "status": "unknown",
+            "unknown_reason": "projection_error",
+        }
+
+    return {
+        "target_id": target_id,
+        "status": "available",
+        "unknown_reason": None,
+        "sensor_to_ego": (
+            np.linalg.inv(ego_to_world) @ sensor_to_world
+        ).tolist(),
+        "ego_to_world": ego_to_world.tolist(),
+        "corridor_centerline_xyz": centerline.tolist(),
+        "corridor_half_width_m": widths.tolist(),
+        "corridor_road_height_m": centerline[:, 2].tolist(),
+        "in_corridor_point_count": int(np.count_nonzero(inside)),
+        "road_surface_point_count": int(np.count_nonzero(surface)),
+    }
 
 
 def _build_camera_record(camera, traffic_elements, actors_by_id):
@@ -469,8 +784,7 @@ def _build_camera_record(camera, traffic_elements, actors_by_id):
         "height": camera.get("height"),
         "fov_degrees": camera.get("fov_degrees"),
         "traffic_lights": [],
-        "stop_signs": [],
-        "stop_lines": [],
+        "stop_targets": [],
         "errors": [],
     }
     camera_error = camera.get("error")
@@ -480,55 +794,97 @@ def _build_camera_record(camera, traffic_elements, actors_by_id):
             record["traffic_lights"].append(
                 _unknown_element(element, "traffic_light", "sensor_unavailable")
             )
-        for element in traffic_elements["stop_signs"]:
-            record["stop_signs"].append(
-                _unknown_element(element, "stop_sign", "sensor_unavailable")
+        for target in traffic_elements["stop_targets"]:
+            record["stop_targets"].append(
+                _unknown_target_view(target, "sensor_unavailable")
             )
         return record
 
-    intrinsic = camera_intrinsics(
-        camera["width"],
-        camera["height"],
-        camera["fov_degrees"],
-    )
-    depth_m = (
-        np.asarray(camera["depth_m"], dtype=np.float64)
-        if "depth_m" in camera
-        else decode_carla_depth(camera["depth_raw"])
-    )
-    for element_type, source_key, target_key in (
-        ("traffic_light", "traffic_lights", "traffic_lights"),
-        ("stop_sign", "stop_signs", "stop_signs"),
-    ):
-        for element in traffic_elements[source_key]:
-            actor_id = int(element["actor_id"])
-            view, error = _build_element_view(
-                element,
-                element_type,
-                actors_by_id.get(actor_id),
-                camera,
-                intrinsic,
-                depth_m,
+    try:
+        intrinsic = camera_intrinsics(
+            camera["width"],
+            camera["height"],
+            camera["fov_degrees"],
+        )
+        depth_m = (
+            np.asarray(camera["depth_m"], dtype=np.float64)
+            if "depth_m" in camera
+            else decode_carla_depth(camera["depth_raw"])
+        )
+        if depth_m.shape != (
+            int(camera["height"]),
+            int(camera["width"]),
+        ):
+            raise ValueError("camera depth shape does not match image dimensions")
+    except Exception as exc:
+        record["errors"].append(f"camera projection setup failed: {exc}")
+        for element in traffic_elements["traffic_lights"]:
+            record["traffic_lights"].append(
+                _unknown_element(element, "traffic_light", "projection_error")
             )
-            record[target_key].append(view)
-            if error:
-                record["errors"].append(error)
-            for line in element["stop_lines"]:
-                try:
-                    record["stop_lines"].append(
-                        _project_stop_line(
-                            line,
-                            actor_id,
-                            element_type,
-                            camera,
-                            intrinsic,
-                        )
-                    )
-                except Exception as exc:
-                    record["errors"].append(
-                        f"actor {actor_id} stop line projection failed: {exc}"
-                    )
+        for target in traffic_elements["stop_targets"]:
+            record["stop_targets"].append(
+                _unknown_target_view(target, "projection_error")
+            )
+        return record
+
+    for element in traffic_elements["traffic_lights"]:
+        actor_id = int(element["actor_id"])
+        view, error = _build_element_view(
+            element,
+            "traffic_light",
+            actors_by_id.get(actor_id),
+            camera,
+            intrinsic,
+            depth_m,
+        )
+        record["traffic_lights"].append(view)
+        if error:
+            record["errors"].append(error)
+
+    for target in traffic_elements["stop_targets"]:
+        try:
+            record["stop_targets"].append(
+                _project_target_camera(target, camera, intrinsic, depth_m)
+            )
+        except Exception as exc:
+            record["stop_targets"].append(
+                _unknown_target_view(target, "projection_error")
+            )
+            record["errors"].append(
+                f"target {target.get('target_id')} projection failed: {exc}"
+            )
     return record
+
+
+def _build_lidar_record(targets, lidar_frame):
+    record = {"targets": [], "errors": []}
+    frame = lidar_frame or {}
+    frame_error = frame.get("error") or (
+        "required sensor unavailable: lidar" if not lidar_frame else None
+    )
+    if frame_error:
+        record["errors"].append(str(frame_error))
+    for target in targets:
+        evidence = build_lidar_target_evidence(
+            target,
+            None if frame_error else frame.get("points"),
+            None if frame_error else frame.get("transform"),
+            None if frame_error else frame.get("ego_transform"),
+        )
+        record["targets"].append(evidence)
+        if evidence["unknown_reason"] == "projection_error":
+            record["errors"].append(
+                f"target {target.get('target_id')} lidar projection failed"
+            )
+    return record
+
+
+def _evidence_config_record():
+    return {
+        key: dict(value) if isinstance(value, dict) else value
+        for key, value in EVIDENCE.items()
+    }
 
 
 def build_traffic_element_view_record(
@@ -536,18 +892,14 @@ def build_traffic_element_view_record(
     traffic_elements,
     actors_by_id,
     camera_frames,
+    lidar_frame=None,
 ):
-    """Build a versioned image-label record for one saved sensor frame."""
+    """Build a versioned camera/lidar evidence record for one sensor frame."""
     return {
         "schema_version": IMAGE_SCHEMA_VERSION,
         "source_traffic_element_schema_version": traffic_elements["schema_version"],
         "frame_id": str(frame_id),
-        "association": {
-            "roi_expand_pixels": ASSOCIATION["roi_expand_pixels"],
-            "minimum_semantic_pixels": ASSOCIATION["minimum_semantic_pixels"],
-            "traffic_light": dict(ASSOCIATION["traffic_light"]),
-            "stop_sign": dict(ASSOCIATION["stop_sign"]),
-        },
+        "association": _evidence_config_record(),
         "cameras": {
             camera_name: _build_camera_record(
                 camera,
@@ -556,5 +908,9 @@ def build_traffic_element_view_record(
             )
             for camera_name, camera in camera_frames.items()
         },
+        "lidar": _build_lidar_record(
+            traffic_elements["stop_targets"],
+            lidar_frame,
+        ),
         "errors": list(traffic_elements.get("errors", [])),
     }

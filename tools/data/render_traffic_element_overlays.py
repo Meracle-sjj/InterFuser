@@ -74,6 +74,23 @@ def select_records(records, camera_name="front", limit=12):
         group = group_key(entry)
         selected_group_counts[group] = selected_group_counts.get(group, 0) + 1
 
+    def category_rank(entry, category):
+        if category != "valid_target":
+            return (0, 0.0)
+        target_ranks = [
+            (
+                0
+                if target.get("boundary", {}).get("projection_status") == "projected"
+                and target.get("corridor", {}).get("projection_status") == "projected"
+                else 1,
+                abs(float(target["signed_route_distance_m"])),
+            )
+            for target in _camera(entry[1], camera_name).get("stop_targets", [])
+            if target.get("status") == "available"
+            and isinstance(target.get("signed_route_distance_m"), (int, float))
+        ]
+        return min(target_ranks) if target_ranks else (1, float("inf"))
+
     for category in (
         "valid_target",
         "unknown_target",
@@ -91,6 +108,7 @@ def select_records(records, camera_name="front", limit=12):
                     candidates,
                     key=lambda entry: (
                         selected_group_counts.get(group_key(entry), 0),
+                        category_rank(entry, category),
                         str(entry[0]),
                     ),
                 )

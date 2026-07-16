@@ -29,7 +29,7 @@ def _light(relevant=True):
     }
 
 
-def _target(status="available", candidate=False):
+def _target(status="available", candidate=False, distance=10.0, projected=True):
     unknown = status == "unknown"
     painted = {"status": "unknown", "image_segment": None, "score": None}
     if candidate:
@@ -43,25 +43,25 @@ def _target(status="available", candidate=False):
         "status": status,
         "unknown_reason": "geometry_unknown" if unknown else None,
         "geometry_unknown_reason": "waypoint_branch" if unknown else None,
-        "signed_route_distance_m": 10.0,
+        "signed_route_distance_m": distance,
         "trigger_waypoint": {
             "projection_status": "unknown" if unknown else "projected",
             "image_point": None if unknown else [50.0, 220.0],
         },
         "boundary": {
-            "projection_status": "unknown" if unknown else "projected",
-            "image_segment": None if unknown else [[100.0, 200.0], [300.0, 200.0]],
+            "projection_status": "unknown" if unknown else ("projected" if projected else "behind_camera"),
+            "image_segment": None if unknown or not projected else [[100.0, 200.0], [300.0, 200.0]],
         },
         "recommended_stop_pose": {
             "projection_status": "unknown" if unknown else "projected",
             "image_point": None if unknown else [200.0, 240.0],
         },
         "corridor": {
-            "projection_status": "unknown" if unknown else "projected",
-            "image_polyline": [] if unknown else [[200.0, 240.0], [200.0, 150.0]],
+            "projection_status": "unknown" if unknown else ("projected" if projected else "outside_image"),
+            "image_polyline": [] if unknown or not projected else [[200.0, 240.0], [200.0, 150.0]],
             "image_envelope": (
                 []
-                if unknown
+                if unknown or not projected
                 else [[80.0, 250.0], [100.0, 150.0], [300.0, 150.0], [320.0, 250.0]]
             ),
         },
@@ -168,6 +168,38 @@ class TrafficElementOverlayTests(unittest.TestCase):
                 "route_c/traffic_element_views/0001",
             ],
         )
+
+    def test_valid_target_prefers_nearest_signed_route_distance(self):
+        records = [
+            (
+                "route/traffic_element_views/0001",
+                _record(target=_target(distance=50.0)),
+            ),
+            (
+                "route/traffic_element_views/0002",
+                _record(target=_target(distance=5.0)),
+            ),
+        ]
+
+        selected = select_records(records, camera_name="front", limit=1)
+
+        self.assertEqual(selected[0][0], "route/traffic_element_views/0002")
+
+    def test_valid_target_prefers_visible_geometry_before_distance(self):
+        records = [
+            (
+                "route/traffic_element_views/0001",
+                _record(target=_target(distance=0.0, projected=False)),
+            ),
+            (
+                "route/traffic_element_views/0002",
+                _record(target=_target(distance=7.0, projected=True)),
+            ),
+        ]
+
+        selected = select_records(records, camera_name="front", limit=1)
+
+        self.assertEqual(selected[0][0], "route/traffic_element_views/0002")
 
 
 if __name__ == "__main__":

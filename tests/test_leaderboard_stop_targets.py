@@ -4,9 +4,13 @@ import unittest
 from team_code.leaderboard_stop_targets import (
     BOUNDARY_HALF_LANE_RATIO,
     BOUNDARY_STEP_M,
+    CORRIDOR_EXTENSION_M,
     GEOMETRY_SOURCE,
+    ROUTE_MIN_DISTANCE_M,
+    SAFETY_MARGIN_M,
     advance_to_infraction_boundary,
     boundary_from_waypoint,
+    build_stop_targets,
     sample_trigger_lane_waypoints,
 )
 
@@ -93,18 +97,36 @@ class FakeWaypoint:
 
 
 class FakeMap:
-    def __init__(self, default_lane=None):
+    def __init__(self, default_lane=None, route=None, name="Town01_Opt"):
         self.default_lane = default_lane
+        self.route = list(route or [])
+        self.name = name
         self.queries = []
 
     def get_waypoint(self, location):
         self.queries.append(location)
+        if self.route:
+            return min(
+                self.route,
+                key=lambda waypoint: waypoint.transform.location.distance(location),
+            )
         return self.default_lane
 
 
 class FakeTrafficLight:
-    def __init__(self, extent_x=2.0, yaw=0.0):
-        self._transform = FakeTransform(FakeLocation(), yaw=yaw)
+    type_id = "traffic.traffic_light"
+
+    def __init__(
+        self,
+        actor_id=11,
+        state="Red",
+        trigger_x=0.0,
+        extent_x=2.0,
+        yaw=0.0,
+    ):
+        self.id = actor_id
+        self.state = state
+        self._transform = FakeTransform(FakeLocation(trigger_x, 0.0, 0.0), yaw=yaw)
         self.trigger_volume = FakeTrigger(
             location=FakeLocation(),
             extent=FakeExtent(extent_x, 1.0, 2.0),
@@ -112,6 +134,15 @@ class FakeTrafficLight:
 
     def get_transform(self):
         return self._transform
+
+    def get_location(self):
+        return self._transform.location
+
+
+class FakeBoundingBox:
+    def __init__(self, location_x=0.0, extent_x=2.0):
+        self.location = FakeLocation(x=location_x)
+        self.extent = FakeExtent(x=extent_x)
 
 
 def linked_waypoints(xs, intersection_index=None):
@@ -127,6 +158,28 @@ def linked_waypoints(xs, intersection_index=None):
     for current, following in zip(waypoints, waypoints[1:]):
         current.successors = [following]
     return waypoints
+
+
+def dense_route(start, end, step=0.5, intersection_start=20.0):
+    count = int(round((end - start) / step))
+    xs = [start + index * step for index in range(count + 1)]
+    route = [
+        FakeWaypoint(
+            road_id=7,
+            lane_id=-1,
+            x=x,
+            s=x,
+            is_intersection=x >= intersection_start,
+        )
+        for x in xs
+    ]
+    for current, following in zip(route, route[1:]):
+        current.successors = [following]
+    return route
+
+
+def ego_transform_at(x, yaw=0.0):
+    return FakeTransform(FakeLocation(x, 0.0, 0.0), yaw=yaw)
 
 
 class LeaderboardBoundaryTests(unittest.TestCase):
@@ -223,6 +276,117 @@ class LeaderboardBoundaryTests(unittest.TestCase):
         self.assertIs(result["waypoint"], start)
         self.assertEqual(result["steps"], 0)
         self.assertEqual(start.next_distances, [])
+
+
+class RouteTargetTests(unittest.TestCase):
+    def _targets(
+        self,
+        ego_x=0.0,
+        ego_yaw=0.0,
+        trigger_x=10.0,
+        actor_ids=(41,),
+        bbox_location_x=0.2,
+        bbox_extent_x=2.0,
+    ):
+        route = dense_route(0.0, 30.0)
+        world_map = FakeMap(route=route)
+        lights = [
+            FakeTrafficLight(
+                actor_id=actor_id,
+                state="Red",
+                trigger_x=trigger_x,
+                extent_x=0.1,
+            )
+            for actor_id in actor_ids
+        ]
+        return build_stop_targets(
+            lights,
+            world_map,
+            route,
+            ego_transform_at(ego_x, yaw=ego_yaw),
+            FakeBoundingBox(
+                location_x=bbox_location_x,
+                extent_x=bbox_extent_x,
+            ),
+            world_map.name,
+        )
+
+    def test_groups_owner_lights_and_uses_map_stable_target_id(self):
+        targets = self._targets(actor_ids=(99, 41))
+
+        self.assertEqual(len(targets), 1)
+        target = targets[0]
+        self.assertEqual(target["owner_traffic_light_actor_ids"], [41, 99])
+        self.assertEqual(
+            target["target_id"],
+            "Town01_Opt:7:0:-1:19.5",
+        )
+        self.assertEqual(target["state_by_actor_id"], {"41": "Red", "99": "Red"})
+
+    def test_signed_route_distance_and_primary_target(self):
+        target = self._targets(ego_x=5.0)[0]
+
+        self.assertAlmostEqual(target["signed_route_distance_m"], 14.5)
+        self.assertAlmostEqual(target["euclidean_distance_m"], 14.5)
+        self.assertTrue(target["ego_before_boundary"])
+        self.assertTrue(target["primary_for_ego"])
+
+    def test_recently_crossed_target_is_retained(self):
+        target = self._targets(ego_x=25.0)[0]
+
+        self.assertAlmostEqual(target["signed_route_distance_m"], -5.5)
+        self.assertGreaterEqual(
+            target["signed_route_distance_m"],
+            ROUTE_MIN_DISTANCE_M,
+        )
+        self.assertFalse(target["ego_before_boundary"])
+        self.assertFalse(target["primary_for_ego"])
+
+    def test_target_before_post_crossing_window_is_omitted(self):
+        self.assertEqual(self._targets(ego_x=30.0), [])
+
+    def test_stop_pose_uses_vehicle_front_offset_and_safety_margin(self):
+        target = self._targets(ego_x=0.0)[0]
+
+        self.assertEqual(SAFETY_MARGIN_M, 1.0)
+        self.assertAlmostEqual(target["vehicle_front_offset_m"], 2.2)
+        self.assertAlmostEqual(
+            target["recommended_ego_stop_pose"]["location"]["x"],
+            16.3,
+        )
+
+    def test_corridor_extends_beyond_trigger_and_boundary(self):
+        target = self._targets(ego_x=0.0)[0]
+        xs = [
+            sample["location"]["x"]
+            for sample in target["stop_evidence_corridor"]["centerline"]
+        ]
+
+        self.assertEqual(CORRIDOR_EXTENSION_M, 3.0)
+        self.assertAlmostEqual(xs[0], 7.0)
+        self.assertAlmostEqual(xs[-1], 22.5)
+        self.assertTrue(all(sample["lane_width"] == 4.0 for sample in target["stop_evidence_corridor"]["centerline"]))
+
+    def test_reverse_ego_heading_makes_target_unknown(self):
+        target = self._targets(ego_x=5.0, ego_yaw=180.0)[0]
+
+        self.assertEqual(target["status"], "unknown")
+        self.assertEqual(target["unknown_reason"], "direction_mismatch")
+        self.assertFalse(target["primary_for_ego"])
+
+    def test_empty_route_produces_no_target_or_negative(self):
+        light = FakeTrafficLight(trigger_x=10.0, extent_x=0.1)
+
+        targets = build_stop_targets(
+            [light],
+            FakeMap(default_lane=FakeWaypoint(7, -1, 10.0)),
+            [],
+            ego_transform_at(0.0),
+            FakeBoundingBox(),
+            "Town01_Opt",
+        )
+
+        self.assertEqual(targets, [])
 
 
 if __name__ == "__main__":

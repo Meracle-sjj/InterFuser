@@ -16,6 +16,7 @@ def _camera_record(
     active_light=False,
     irrelevant_light=False,
     relevant_stop=False,
+    relevant_stop_visibility="visible",
 ):
     lights = []
     if active_light:
@@ -43,7 +44,7 @@ def _camera_record(
         stops.append(
             {
                 "actor_id": 21,
-                "visibility": "visible",
+                "visibility": relevant_stop_visibility,
                 "affects_ego_route": True,
             }
         )
@@ -123,7 +124,13 @@ class TrafficElementOverlayTests(unittest.TestCase):
             ("route_a/0003", _record(irrelevant_light=True)),
             ("route_a/0001", _record(active_light=True)),
             ("route_a/0002", _record(irrelevant_light=True)),
-            ("route_a/0004", _record(relevant_stop=True)),
+            (
+                "route_a/0004",
+                _record(
+                    relevant_stop=True,
+                    relevant_stop_visibility="not_visible",
+                ),
+            ),
             ("route_a/0000", _record()),
         ]
 

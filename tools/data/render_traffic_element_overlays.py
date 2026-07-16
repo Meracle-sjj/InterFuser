@@ -46,7 +46,7 @@ def _frame_flags(record, camera_name):
         for item in visible_lights
     )
     relevant_stop = any(
-        item.get("affects_ego_route") is True for item in visible_stops
+        item.get("affects_ego_route") is True for item in stops
     )
     visible_infrastructure = bool(visible_lights or visible_stops)
     return {

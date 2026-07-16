@@ -148,6 +148,27 @@ class TrafficElementOverlayTests(unittest.TestCase):
             ],
         )
 
+    def test_fill_round_robins_across_route_groups(self):
+        records = [
+            (f"route_{route}/traffic_element_views/000{frame}", _record())
+            for route in ("a", "b", "c")
+            for frame in (0, 1)
+        ]
+
+        selected = select_records(records, camera_name="front", limit=6)
+
+        self.assertEqual(
+            [key for key, _record in selected],
+            [
+                "route_a/traffic_element_views/0000",
+                "route_b/traffic_element_views/0000",
+                "route_c/traffic_element_views/0000",
+                "route_a/traffic_element_views/0001",
+                "route_b/traffic_element_views/0001",
+                "route_c/traffic_element_views/0001",
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

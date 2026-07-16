@@ -256,6 +256,7 @@ view_fields = {
     "verified_painted_lines",
     "lidar_available_targets",
     "lidar_unknown_targets",
+    "error_frames",
     "forbidden_stop_occurrences",
 }
 missing = sorted(phase_fields - set(phase)) + sorted(view_fields - set(view))
@@ -263,6 +264,8 @@ if missing:
     raise SystemExit("acceptance fields missing: {}".format(missing))
 if phase["forbidden_stop_occurrences"] or view["forbidden_stop_occurrences"]:
     raise SystemExit("forbidden stop occurrences must be zero")
+if view["error_frames"]:
+    raise SystemExit("evidence error_frames must be zero")
 target_count = phase["valid_stop_targets"] + phase["unknown_stop_targets"]
 lidar_count = view["lidar_available_targets"] + view["lidar_unknown_targets"]
 if lidar_count != target_count:
@@ -273,6 +276,11 @@ if lidar_count != target_count:
     )
 if phase["unknown_stop_targets"] and not phase["unknown_reasons"]:
     raise SystemExit("unknown stop targets require reason counts")
+if phase["valid_stop_targets"] and (
+    not view["projected_stop_boundaries"]
+    or not view["projected_stop_corridors"]
+):
+    raise SystemExit("valid targets require projected camera boundary and corridor evidence")
 PY
 }
 

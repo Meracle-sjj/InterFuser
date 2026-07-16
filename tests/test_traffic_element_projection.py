@@ -88,7 +88,7 @@ def _valid_stop_target():
         "owner_traffic_light_actor_ids": [11],
         "signed_route_distance_m": 10.0,
         "trigger_stop_waypoint": {
-            "location": {"x": 8.0, "y": 0.0, "z": 0.0},
+            "center": {"x": 8.0, "y": 0.0, "z": 0.0},
         },
         "leaderboard_infraction_boundary": {
             "left_endpoint": {"x": 10.0, "y": -1.0, "z": 0.0},

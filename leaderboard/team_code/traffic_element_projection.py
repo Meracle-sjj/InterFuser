@@ -829,7 +829,7 @@ def _project_target_camera(target, camera, intrinsic, depth_m):
         "signed_route_distance_m": float(target["signed_route_distance_m"]),
     }
     result["trigger_waypoint"] = _project_point(
-        _dict_location(target["trigger_stop_waypoint"]["location"]),
+        _dict_location(target["trigger_stop_waypoint"]["center"]),
         camera,
         intrinsic,
     )

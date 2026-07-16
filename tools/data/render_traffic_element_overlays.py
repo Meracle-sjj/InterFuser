@@ -62,27 +62,52 @@ def select_records(records, camera_name="front", limit=12):
     ordered = sorted(records, key=lambda entry: str(entry[0]))
     selected = []
     selected_keys = set()
+    selected_group_counts = {}
     flags = {key: _frame_flags(record, camera_name) for key, record in ordered}
+
+    def group_key(entry):
+        return str(entry[0]).split("/traffic_element_views/", 1)[0]
+
+    def add(entry):
+        selected.append(entry)
+        selected_keys.add(entry[0])
+        group = group_key(entry)
+        selected_group_counts[group] = selected_group_counts.get(group, 0) + 1
+
     for category in (
         "valid_target",
         "unknown_target",
         "irrelevant_light",
         "hard_negative",
     ):
-        for entry in ordered:
-            if len(selected) >= limit:
-                break
-            key = entry[0]
-            if key not in selected_keys and flags[key][category]:
-                selected.append(entry)
-                selected_keys.add(key)
-                break
-    for entry in ordered:
-        if len(selected) >= limit:
+        candidates = [
+            entry
+            for entry in ordered
+            if entry[0] not in selected_keys and flags[entry[0]][category]
+        ]
+        if candidates and len(selected) < limit:
+            add(
+                min(
+                    candidates,
+                    key=lambda entry: (
+                        selected_group_counts.get(group_key(entry), 0),
+                        str(entry[0]),
+                    ),
+                )
+            )
+    while len(selected) < limit:
+        remaining = [entry for entry in ordered if entry[0] not in selected_keys]
+        if not remaining:
             break
-        if entry[0] not in selected_keys:
-            selected.append(entry)
-            selected_keys.add(entry[0])
+        add(
+            min(
+                remaining,
+                key=lambda entry: (
+                    selected_group_counts.get(group_key(entry), 0),
+                    str(entry[0]),
+                ),
+            )
+        )
     return selected
 
 

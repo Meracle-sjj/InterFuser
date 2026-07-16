@@ -123,7 +123,8 @@ Run:
 
 ```bash
 export PYTHONPATH=$PWD/interfuser:$PWD/carla/PythonAPI:$PWD/carla/PythonAPI/carla:$PWD/leaderboard:$PWD/leaderboard/team_code:$PWD/scenario_runner:$PWD
-/data1/shijj/conda_envs/interfuser_origin/bin/python -m unittest tests.test_leaderboard_stop_targets.LeaderboardBoundaryTests -v
+/data1/shijj/conda_envs/interfuser_origin/bin/python -m unittest discover \
+  -s tests -p 'test_leaderboard_stop_targets.py' -v
 ```
 
 Expected: `ModuleNotFoundError` for `team_code.leaderboard_stop_targets`.
@@ -484,10 +485,12 @@ def test_agent_options_ignore_stop_signs(self):
 Run:
 
 ```bash
-/data1/shijj/conda_envs/interfuser_origin/bin/python -m unittest \
-  tests.test_traffic_element_labels \
-  tests.test_traffic_element_collector \
-  tests.test_collector_stop_exclusion -v
+/data1/shijj/conda_envs/interfuser_origin/bin/python -m unittest discover \
+  -s tests -p 'test_traffic_element_labels.py' -v
+/data1/shijj/conda_envs/interfuser_origin/bin/python -m unittest discover \
+  -s tests -p 'test_traffic_element_collector.py' -v
+/data1/shijj/conda_envs/interfuser_origin/bin/python -m unittest discover \
+  -s tests -p 'test_collector_stop_exclusion.py' -v
 ```
 
 Expected: schema remains v1, STOP keys are present, and `AGENT_OPTIONS` is
@@ -1161,21 +1164,11 @@ TRAFFIC_BATCH_VALIDATE_ONLY=1 tools/data/run_traffic_element_small_batch.sh \
   results/full42_eval/routes/route_00_Town01_Opt.xml \
   results/full42_eval/routes/route_39_Town04_Opt.xml
 
-/data1/shijj/conda_envs/interfuser_origin/bin/python -m unittest \
-  tests.test_leaderboard_stop_targets \
-  tests.test_traffic_element_labels \
-  tests.test_traffic_element_projection \
-  tests.test_traffic_element_collector \
-  tests.test_collector_stop_exclusion \
-  tests.test_audit_traffic_element_labels \
-  tests.test_audit_traffic_element_views \
-  tests.test_render_traffic_element_overlays \
-  tests.test_apply_painted_line_reviews \
-  tests.test_profile_traffic_element_routes \
-  tests.test_check_leaderboard_stop_target_geometry -v
+/data1/shijj/conda_envs/interfuser_origin/bin/python -m unittest discover \
+  -s tests -p 'test_*.py' -v
 ```
 
-Expected: validate-only exits 0; all prior 63 traffic-element tests plus new
+Expected: validate-only exits 0; all prior 59 tracked tests plus new
 tests pass. Record the exact new total rather than predicting it in docs.
 
 - [ ] **Step 4: Check scoped diffs and commit the runner**

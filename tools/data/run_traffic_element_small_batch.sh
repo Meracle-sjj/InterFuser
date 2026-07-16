@@ -107,6 +107,25 @@ if [ "${#ROUTE_FILES[@]}" -ne "${MAX_ROUTES}" ]; then
   echo "internal error: bounded batch must contain exactly four routes" >&2
   exit 70
 fi
+if [ -n "${TRAFFIC_BATCH_ROUTE_INDEXES:-}" ]; then
+  IFS=',' read -r -a requested_indexes <<< "${TRAFFIC_BATCH_ROUTE_INDEXES}"
+  selected_routes=()
+  selected_backgrounds=()
+  for index in "${requested_indexes[@]}"; do
+    if [[ ! "${index}" =~ ^[0-3]$ ]]; then
+      echo "invalid TRAFFIC_BATCH_ROUTE_INDEXES entry: ${index}" >&2
+      exit 64
+    fi
+    selected_routes+=("${ROUTE_FILES[$index]}")
+    selected_backgrounds+=("${BACKGROUND_COUNTS[$index]}")
+  done
+  if [ "${#selected_routes[@]}" -eq 0 ]; then
+    echo "TRAFFIC_BATCH_ROUTE_INDEXES selected no routes" >&2
+    exit 64
+  fi
+  ROUTE_FILES=("${selected_routes[@]}")
+  BACKGROUND_COUNTS=("${selected_backgrounds[@]}")
+fi
 
 export CUDA_VISIBLE_DEVICES=${GPU}
 export CHALLENGE_TRACK_CODENAME=SENSORS

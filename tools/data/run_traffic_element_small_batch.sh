@@ -15,6 +15,7 @@ MAX_ROUTES=4
 MAX_FRAMES=2000
 MAX_BYTES=$((2 * 1024 * 1024 * 1024))
 PYTHON_BIN=/data1/shijj/conda_envs/interfuser_origin/bin/python
+CARLA_ROOT=${CARLA_ROOT:-$PWD/carla}
 RUN_ID=${BATCH_RUN_ID:-$(date +%Y%m%d_%H%M%S)}
 DATA_ROOT="data/traffic_element_small_batch/${RUN_ID}"
 RESULT_ROOT="results/traffic_element_small_batch/${RUN_ID}"
@@ -31,7 +32,7 @@ for route_file in "${PROFILED_TRAFFIC_ROUTE}" "${PROFILED_HARD_NEGATIVE_ROUTE}";
   fi
 done
 
-export PYTHONPATH="$PWD/interfuser:$PWD/carla/PythonAPI:$PWD/carla/PythonAPI/examples:$PWD/carla/PythonAPI/carla:$PWD/leaderboard:$PWD/leaderboard/team_code:$PWD/scenario_runner:$PWD"
+export PYTHONPATH="$PWD/interfuser:${CARLA_ROOT}/PythonAPI:${CARLA_ROOT}/PythonAPI/examples:${CARLA_ROOT}/PythonAPI/carla:$PWD/leaderboard:$PWD/leaderboard/team_code:$PWD/scenario_runner:$PWD"
 PHASE_SCHEMA=$("${PYTHON_BIN}" -c 'from traffic_element_labels import SCHEMA_VERSION; print(SCHEMA_VERSION)')
 VIEW_SCHEMA=$("${PYTHON_BIN}" -c 'from traffic_element_projection import IMAGE_SCHEMA_VERSION; print(IMAGE_SCHEMA_VERSION)')
 [ "${PHASE_SCHEMA}" = 2 ] || { echo "expected phase schema 2" >&2; exit 65; }
@@ -47,6 +48,10 @@ fi
 if [ -e "${DATA_ROOT}" ] || [ -e "${RESULT_ROOT}" ]; then
   echo "refusing to reuse existing batch run: ${RUN_ID}" >&2
   exit 73
+fi
+if [ ! -x "${CARLA_ROOT}/CarlaUE4.sh" ]; then
+  echo "CARLA runtime not executable: ${CARLA_ROOT}/CarlaUE4.sh" >&2
+  exit 66
 fi
 
 mkdir -p "${DATA_ROOT}" "${RESULT_ROOT}/logs" "${RESULT_ROOT}/checkpoints" \
@@ -157,7 +162,7 @@ start_carla() {
   local carla_log="${RESULT_ROOT}/logs/carla_2400.log"
   kill_evaluator_2400
   kill_carla_2400
-  ./carla/CarlaUE4.sh --world-port=${PORT} -quality-level=Low -RenderOffScreen \
+  "${CARLA_ROOT}/CarlaUE4.sh" --world-port=${PORT} -quality-level=Low -RenderOffScreen \
     > "${carla_log}" 2>&1 &
   echo "$!" > "${RESULT_ROOT}/logs/carla_2400.pid"
 

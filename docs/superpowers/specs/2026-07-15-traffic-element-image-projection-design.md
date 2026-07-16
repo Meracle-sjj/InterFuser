@@ -121,11 +121,12 @@ directories.
 
 ## Image Label Schema
 
-Schema version 1 is separate from the Phase 1 world-label schema:
+Schema version 2 is separate from the Phase 1 world-label schema. Version 2
+corrects the CARLA 0.9.16 semantic IDs and uses traffic-light lamp geometry:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "source_traffic_element_schema_version": 1,
   "frame_id": "0052",
   "cameras": {
@@ -171,12 +172,16 @@ with `not_visible` is different from a missing or failed label.
 
 For each camera and actor:
 
-1. Project the actor bounding box into an image ROI. If the actor has no usable
-   bounding box, project its trigger volume and record that fallback
-   provenance. Expand the clipped ROI by 6 pixels on each side.
+1. For a traffic light, project the world-space boxes returned by
+   `TrafficLight.get_light_boxes()`. The actor `bounding_box` is the road
+   trigger volume in CARLA 0.9.16 and does not enclose the visible lamps. For
+   other actors, project the actor bounding box or trigger volume and record
+   the provenance. Expand the clipped ROI by 6 pixels on each side.
 2. Decode CARLA's three-channel depth image with the repository's existing
-   24-bit formula and compute the camera-to-actor distance.
-3. Select semantic tag 18 for traffic lights or tag 12 for stop signs.
+   24-bit formula and compute camera-to-geometry-center distances.
+3. Select semantic tag 7 for traffic lights or tag 8 for traffic signs. These
+   are the values exposed by CARLA 0.9.16 `CityObjectLabel`; 18 and 12 denote
+   motorcycles and pedestrians in this build.
 4. Inside the ROI, retain pixels whose decoded depth differs from actor
    distance by at most 4 m for traffic lights or 6 m for stop signs.
 5. Derive a box only when at least 3 pixels remain. The visible box is the
@@ -223,7 +228,7 @@ Live verification must include:
 
 - an active red-light frame;
 - an irrelevant visible light;
-- a route-relevant stop-sign frame;
+- a Phase 1 route-relevant stop-sign frame with a projected stop line;
 - a no-active-light hard negative;
 - a partially or fully occluded actor when background traffic is enabled.
 
@@ -262,7 +267,7 @@ Acceptance criteria:
 - zero unmatched RGB/world-label/image-label frame IDs;
 - zero non-finite or zero-area visible boxes;
 - at least one semantic/depth-confirmed active traffic light;
-- at least one semantic/depth-confirmed route-relevant stop sign;
+- at least one Phase 1 route-relevant stop sign with a projected stop line;
 - at least one projected relevant stop line before and after crossing;
 - at least 20 no-active-light hard-negative frames;
 - twelve manually reviewed overlays covering positive, irrelevant, negative,
@@ -271,6 +276,12 @@ Acceptance criteria:
 
 Failure of any criterion stops expansion. Thresholds or projection logic are
 fixed and the same bounded batch is rerun before collecting more data.
+
+Town03 route36 contains a `traffic.stop` trigger and a visible road-surface
+`STOP` marking, but no vertical TrafficSigns-tagged stop-sign asset. A missing
+tag-8 box in such a frame is therefore not promoted to a visual positive. The
+route still validates the route-relevant stop-line geometry required for the
+visual stop-line task.
 
 ## Non-Goals
 

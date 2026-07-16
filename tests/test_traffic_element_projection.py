@@ -4,6 +4,8 @@ import unittest
 import numpy as np
 
 from team_code.traffic_element_projection import (
+    ASSOCIATION,
+    IMAGE_SCHEMA_VERSION,
     associate_semantic_box,
     build_traffic_element_view_record,
     camera_intrinsics,
@@ -44,6 +46,13 @@ class FakeBoundingBox:
         return list(self._vertices)
 
 
+class FakeWorldBoundingBox:
+    def __init__(self, location, extent, rotation=None):
+        self.location = location
+        self.extent = extent
+        self.rotation = rotation or FakeRotation()
+
+
 class FakeActor:
     def __init__(self, actor_id, vertices):
         self.id = actor_id
@@ -52,6 +61,15 @@ class FakeActor:
 
     def get_transform(self):
         return self._transform
+
+
+class FakeTrafficLightActor(FakeActor):
+    def __init__(self, actor_id, vertices, light_boxes):
+        super().__init__(actor_id, vertices)
+        self._light_boxes = light_boxes
+
+    def get_light_boxes(self):
+        return list(self._light_boxes)
 
 
 def _phase1_record():
@@ -90,7 +108,7 @@ def _phase1_record():
 
 def _camera_frame():
     semantic = np.zeros((10, 12), dtype=np.uint8)
-    semantic[3:6, 4:8] = 18
+    semantic[3:6, 4:8] = 7
     depth = np.full((10, 12), 100.0, dtype=np.float64)
     depth[3:6, 4:8] = 20.0
     return {
@@ -161,6 +179,11 @@ class ProjectionMathTests(unittest.TestCase):
 
 
 class AssociationTests(unittest.TestCase):
+    def test_association_uses_carla_0916_semantic_tags(self):
+        self.assertEqual(IMAGE_SCHEMA_VERSION, 2)
+        self.assertEqual(ASSOCIATION["traffic_light"]["semantic_tag"], 7)
+        self.assertEqual(ASSOCIATION["stop_sign"]["semantic_tag"], 8)
+
     def test_projected_roi_clips_and_expands_visible_vertices(self):
         camera = FakeTransform()
         intrinsic = camera_intrinsics(400, 300, 100.0)
@@ -236,6 +259,21 @@ class AssociationTests(unittest.TestCase):
         self.assertEqual(result["visibility"], "not_visible")
         self.assertEqual(result["semantic_pixel_count"], 0)
 
+    def test_semantic_pixels_can_match_multiple_geometry_depths(self):
+        result = associate_semantic_box(
+            [0, 0, 3, 1],
+            np.full((1, 3), 7, dtype=np.uint8),
+            np.array([[10.0, 20.0, 30.0]]),
+            [10.0, 20.0],
+            7,
+            0.1,
+            2,
+        )
+
+        self.assertEqual(result["visibility"], "visible")
+        self.assertEqual(result["bbox_xyxy"], [0, 0, 2, 1])
+        self.assertEqual(result["semantic_pixel_count"], 2)
+
     def test_stop_line_segment_is_clipped_to_image(self):
         self.assertEqual(
             clip_image_segment((-10.0, 5.0), (20.0, 5.0), 12, 10),
@@ -246,6 +284,19 @@ class AssociationTests(unittest.TestCase):
         self.assertIsNone(
             clip_image_segment((-10.0, -5.0), (-2.0, -1.0), 12, 10)
         )
+
+    def test_clipped_segment_is_clamped_inside_numeric_image_bounds(self):
+        segment = clip_image_segment(
+            (30.067727895143836, 171.74269465800492),
+            (-11.93178824196188, 177.0732625136505),
+            400,
+            300,
+        )
+
+        self.assertEqual(segment[1][0], 0.0)
+        for point in segment:
+            self.assertTrue(0.0 <= point[0] <= 399.0)
+            self.assertTrue(0.0 <= point[1] <= 299.0)
 
 
 class ViewRecordTests(unittest.TestCase):
@@ -265,7 +316,7 @@ class ViewRecordTests(unittest.TestCase):
             camera_frames={"front": _camera_frame()},
         )
 
-        self.assertEqual(record["schema_version"], 1)
+        self.assertEqual(record["schema_version"], 2)
         self.assertEqual(record["frame_id"], "0052")
         light = record["cameras"]["front"]["traffic_lights"][0]
         self.assertEqual(light["actor_id"], 11)
@@ -274,6 +325,29 @@ class ViewRecordTests(unittest.TestCase):
         self.assertTrue(light["controls_ego_lane"])
         self.assertEqual(light["association_source"], "semantic_depth_confirmed")
         self.assertEqual(light["bbox_xyxy"], [4, 3, 8, 6])
+
+    def test_traffic_light_uses_light_boxes_instead_of_trigger_box(self):
+        actor = FakeTrafficLightActor(
+            11,
+            [FakeLocation(-5.0, 0.0, 0.0)],
+            [
+                FakeWorldBoundingBox(
+                    FakeLocation(20.0, 0.0, 0.0),
+                    FakeLocation(4.0, 4.0, 4.0),
+                )
+            ],
+        )
+
+        record = build_traffic_element_view_record(
+            "0052",
+            _phase1_record(),
+            {11: actor},
+            {"front": _camera_frame()},
+        )
+
+        light = record["cameras"]["front"]["traffic_lights"][0]
+        self.assertEqual(light["visibility"], "visible")
+        self.assertEqual(light["geometry_source"], "traffic_light_boxes")
 
     def test_stop_line_preserves_provenance_and_distance(self):
         record = build_traffic_element_view_record(

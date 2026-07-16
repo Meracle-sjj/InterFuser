@@ -15,11 +15,11 @@ EXPECTED_ASSOCIATION = {
     "roi_expand_pixels": 6,
     "minimum_semantic_pixels": 3,
     "traffic_light": {
-        "semantic_tag": 18,
+        "semantic_tag": 7,
         "depth_tolerance_m": 4.0,
     },
     "stop_sign": {
-        "semantic_tag": 12,
+        "semantic_tag": 8,
         "depth_tolerance_m": 6.0,
     },
 }
@@ -129,7 +129,7 @@ def _camera_record(visible=False):
 
 def _view_record():
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "source_traffic_element_schema_version": 1,
         "frame_id": "0000",
         "association": copy.deepcopy(EXPECTED_ASSOCIATION),

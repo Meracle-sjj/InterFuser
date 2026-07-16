@@ -197,7 +197,7 @@ from team_code.traffic_element_projection import (
 class AssociationTests(unittest.TestCase):
     def test_semantic_depth_pixels_create_tight_xyxy_box(self):
         semantic = np.zeros((10, 12), dtype=np.uint8)
-        semantic[3:6, 4:8] = 18
+        semantic[3:6, 4:8] = 7
         depth = np.full((10, 12), 100.0, dtype=np.float32)
         depth[3:6, 4:8] = 20.0
         result = associate_semantic_box(
@@ -205,7 +205,7 @@ class AssociationTests(unittest.TestCase):
             semantic=semantic,
             depth_m=depth,
             actor_distance_m=20.0,
-            semantic_tag=18,
+            semantic_tag=7,
             depth_tolerance_m=4.0,
             min_pixels=3,
         )
@@ -219,7 +219,7 @@ class AssociationTests(unittest.TestCase):
             np.zeros((8, 8), dtype=np.uint8),
             np.full((8, 8), 20.0, dtype=np.float32),
             20.0,
-            18,
+            7,
             4.0,
             3,
         )
@@ -339,7 +339,7 @@ record = build_traffic_element_view_record(
     actors_by_id={11: fake_light},
     camera_frames={"front": camera_frame},
 )
-self.assertEqual(record["schema_version"], 1)
+self.assertEqual(record["schema_version"], 2)
 self.assertEqual(record["frame_id"], "0052")
 light = record["cameras"]["front"]["traffic_lights"][0]
 self.assertEqual(light["actor_id"], 11)
@@ -367,8 +367,8 @@ Add constants:
 ASSOCIATION = {
     "roi_expand_pixels": 6,
     "minimum_semantic_pixels": 3,
-    "traffic_light": {"semantic_tag": 18, "depth_tolerance_m": 4.0},
-    "stop_sign": {"semantic_tag": 12, "depth_tolerance_m": 6.0},
+    "traffic_light": {"semantic_tag": 7, "depth_tolerance_m": 4.0},
+    "stop_sign": {"semantic_tag": 8, "depth_tolerance_m": 6.0},
 }
 ```
 
@@ -659,7 +659,7 @@ git commit -m "Profile routes for traffic element coverage"
 - [ ] **Step 1: Document all fields and thresholds**
 
 Copy the exact schema constants from code. Document right/bottom-exclusive
-`bbox_xyxy`, CARLA axes, 24-bit depth units, semantic tags 18/12, 6-pixel ROI
+`bbox_xyxy`, CARLA axes, 24-bit depth units, semantic tags 7/8, 6-pixel ROI
 expansion, 4 m/6 m depth tolerances, 3-pixel minimum, visibility states,
 projection provenance, nullable fields, and schema version rules.
 
@@ -691,8 +691,9 @@ python tools/data/render_traffic_element_overlays.py data/traffic_element_image_
 ```
 
 Require zero invalid frames, a semantic-confirmed active traffic light, a
-semantic-confirmed relevant stop sign, and stop-line projections before/after
-crossing. Inspect all twelve overlay images.
+Phase 1 route-relevant stop sign with a projected line, and stop-line
+projections before/after crossing. A tag-8 stop-sign box is optional when the
+map has no visible vertical sign asset. Inspect all twelve overlay images.
 
 - [ ] **Step 6: Commit code and documentation after smoke passes**
 
@@ -755,7 +756,7 @@ Record exact batch counts and ensure:
 
 - zero invalid or unmatched frames;
 - zero invalid visible boxes;
-- active-light and relevant-stop-sign positives;
+- semantic active-light positives and route-relevant stop-line projections;
 - stop-line projections before and after crossing;
 - at least 20 hard-negative frames;
 - twelve reviewed overlays;

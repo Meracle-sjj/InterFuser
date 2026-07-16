@@ -5,16 +5,16 @@ import math
 import numpy as np
 
 
-IMAGE_SCHEMA_VERSION = 1
+IMAGE_SCHEMA_VERSION = 2
 ASSOCIATION = {
     "roi_expand_pixels": 6,
     "minimum_semantic_pixels": 3,
     "traffic_light": {
-        "semantic_tag": 18,
+        "semantic_tag": 7,
         "depth_tolerance_m": 4.0,
     },
     "stop_sign": {
-        "semantic_tag": 12,
+        "semantic_tag": 8,
         "depth_tolerance_m": 6.0,
     },
 }
@@ -167,7 +167,20 @@ def associate_semantic_box(
         raise ValueError("roi must be clipped inside the image")
 
     semantic_roi = semantic[y1:y2, x1:x2]
-    residual = np.abs(depth_m[y1:y2, x1:x2] - float(actor_distance_m))
+    expected_depths = np.asarray(actor_distance_m, dtype=np.float64)
+    if expected_depths.ndim == 0:
+        expected_depths = expected_depths.reshape(1)
+    if (
+        expected_depths.ndim != 1
+        or not len(expected_depths)
+        or not np.isfinite(expected_depths).all()
+    ):
+        raise ValueError("actor_distance_m must contain finite distances")
+    depth_roi = depth_m[y1:y2, x1:x2]
+    residual = np.min(
+        np.abs(depth_roi[..., np.newaxis] - expected_depths),
+        axis=-1,
+    )
     mask = (
         (semantic_roi == int(semantic_tag))
         & np.isfinite(residual)
@@ -221,10 +234,14 @@ def clip_image_segment(start, end, width, height):
         if lower > upper:
             return None
 
-    return [
+    clipped = [
         [x1 + lower * dx, y1 + lower * dy],
         [x1 + upper * dx, y1 + upper * dy],
     ]
+    for point in clipped:
+        point[0] = min(max(point[0], 0.0), float(width - 1))
+        point[1] = min(max(point[1], 0.0), float(height - 1))
+    return clipped
 
 
 def _dict_location(location):
@@ -234,17 +251,57 @@ def _dict_location(location):
     )
 
 
-def _actor_world_vertices(actor, element):
+def _world_bounding_box_vertices(bounding_box):
+    extent = bounding_box.extent
+    local = np.array(
+        [
+            [x, y, z]
+            for x in (-float(extent.x), float(extent.x))
+            for y in (-float(extent.y), float(extent.y))
+            for z in (-float(extent.z), float(extent.z))
+        ],
+        dtype=np.float64,
+    )
+    rotation = bounding_box.rotation
+    rotated = (
+        _rotation_matrix(rotation.pitch, rotation.yaw, rotation.roll)
+        @ local.T
+    ).T
+    center = np.array(
+        [
+            float(bounding_box.location.x),
+            float(bounding_box.location.y),
+            float(bounding_box.location.z),
+        ],
+        dtype=np.float64,
+    )
+    return rotated + center, center
+
+
+def _actor_world_vertices(actor, element, element_type):
+    if element_type == "traffic_light" and hasattr(actor, "get_light_boxes"):
+        light_boxes = list(actor.get_light_boxes())
+        if not light_boxes:
+            raise ValueError("traffic light has no light boxes")
+        geometry = [_world_bounding_box_vertices(box) for box in light_boxes]
+        return (
+            np.concatenate([vertices for vertices, _center in geometry]),
+            "traffic_light_boxes",
+            np.array([center for _vertices, center in geometry]),
+        )
+
     bounding_box = getattr(actor, "bounding_box", None)
     if bounding_box is not None and hasattr(bounding_box, "get_world_vertices"):
         vertices = bounding_box.get_world_vertices(actor.get_transform())
         if vertices:
+            world_vertices = np.array(
+                [[item.x, item.y, item.z] for item in vertices],
+                dtype=np.float64,
+            )
             return (
-                np.array(
-                    [[item.x, item.y, item.z] for item in vertices],
-                    dtype=np.float64,
-                ),
+                world_vertices,
                 "actor_bounding_box",
+                np.mean(world_vertices, axis=0, keepdims=True),
             )
 
     trigger = element.get("trigger_volume")
@@ -270,7 +327,7 @@ def _actor_world_vertices(actor, element):
         )
         @ local.T
     ).T
-    return rotated + center, "trigger_volume"
+    return rotated + center, "trigger_volume", center.reshape(1, 3)
 
 
 def _unknown_element(element, element_type, association_source):
@@ -313,7 +370,11 @@ def _build_element_view(
         return result, f"actor {int(element['actor_id'])} unavailable"
 
     try:
-        vertices, geometry_source = _actor_world_vertices(actor, element)
+        vertices, geometry_source, geometry_centers = _actor_world_vertices(
+            actor,
+            element,
+            element_type,
+        )
         roi = projected_roi(
             vertices,
             camera["transform"],
@@ -322,7 +383,6 @@ def _build_element_view(
             camera["height"],
             ASSOCIATION["roi_expand_pixels"],
         )
-        actor_location = _dict_location(element["location"])
         camera_location = np.array(
             [
                 camera["transform"].location.x,
@@ -331,13 +391,16 @@ def _build_element_view(
             ],
             dtype=np.float64,
         )
-        actor_distance = float(np.linalg.norm(actor_location - camera_location))
+        actor_distances = np.linalg.norm(
+            geometry_centers - camera_location,
+            axis=1,
+        )
         settings = ASSOCIATION[element_type]
         associated = associate_semantic_box(
             roi,
             camera["semantic"],
             depth_m,
-            actor_distance,
+            actor_distances,
             settings["semantic_tag"],
             settings["depth_tolerance_m"],
             ASSOCIATION["minimum_semantic_pixels"],

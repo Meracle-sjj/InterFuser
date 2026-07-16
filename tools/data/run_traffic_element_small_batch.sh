@@ -21,31 +21,73 @@ RESULT_ROOT="results/traffic_element_small_batch/${RUN_ID}"
 RUN_LOG="${RESULT_ROOT}/run.log"
 STATUS_FILE="${RESULT_ROOT}/route_status.tsv"
 
-FIXED_ROUTE13=results/full42_eval/routes/route_13_Town03_Opt.xml
-FIXED_ROUTE36=results/full42_eval/routes/route_36_Town03_Opt.xml
-ROUTE_FILES=("${FIXED_ROUTE13}" "${FIXED_ROUTE36}" "$1" "$2")
-BACKGROUND_COUNTS=(0 0 20 20)
+PROFILED_TRAFFIC_ROUTE=$1
+PROFILED_HARD_NEGATIVE_ROUTE=$2
 
 if [ -e "${DATA_ROOT}" ] || [ -e "${RESULT_ROOT}" ]; then
   echo "refusing to reuse existing batch run: ${RUN_ID}" >&2
   exit 73
 fi
-for route_file in "${ROUTE_FILES[@]}"; do
+for route_file in "${PROFILED_TRAFFIC_ROUTE}" "${PROFILED_HARD_NEGATIVE_ROUTE}"; do
   if [ ! -f "${route_file}" ]; then
     echo "route file not found: ${route_file}" >&2
     exit 66
   fi
 done
+
+mkdir -p "${DATA_ROOT}" "${RESULT_ROOT}/logs" "${RESULT_ROOT}/checkpoints" \
+  "${RESULT_ROOT}/audits" "${RESULT_ROOT}/routes"
+: > "${RUN_LOG}"
+printf 'route\tbackground\tevaluator_exit\tphase1_audit_exit\tview_audit_exit\ttotal_frames\ttotal_bytes\n' \
+  > "${STATUS_FILE}"
+
+FIXED_ROUTE13="${RESULT_ROOT}/routes/route_13_Town03_Opt.xml"
+FIXED_ROUTE36="${RESULT_ROOT}/routes/route_36_Town03_Opt.xml"
+if ! "${PYTHON_BIN}" - leaderboard/data/42routes/42routes.xml \
+  "${RESULT_ROOT}/routes" <<'PY'
+import copy
+from pathlib import Path
+import sys
+import xml.etree.ElementTree as ET
+
+source = Path(sys.argv[1])
+output_dir = Path(sys.argv[2])
+source_root = ET.parse(source).getroot()
+for route_id in ("13", "36"):
+    source_route = next(
+        (route for route in source_root.findall("route") if route.get("id") == route_id),
+        None,
+    )
+    if source_route is None:
+        raise SystemExit(f"route {route_id} is absent from {source}")
+    route = copy.deepcopy(source_route)
+    for weather in list(route.findall("weather")):
+        route.remove(weather)
+    town = route.attrib["town"].split("/")[-1]
+    town = town if town.endswith("_Opt") else town + "_Opt"
+    route.set("town", town)
+    root = ET.Element("routes")
+    root.append(route)
+    ET.indent(root, space="  ")
+    target = output_dir / f"route_{int(route_id):02d}_{town}.xml"
+    ET.ElementTree(root).write(target, encoding="UTF-8", xml_declaration=True)
+    print(target)
+PY
+then
+  exit 65
+fi
+
+ROUTE_FILES=(
+  "${FIXED_ROUTE13}"
+  "${FIXED_ROUTE36}"
+  "${PROFILED_TRAFFIC_ROUTE}"
+  "${PROFILED_HARD_NEGATIVE_ROUTE}"
+)
+BACKGROUND_COUNTS=(0 0 20 20)
 if [ "${#ROUTE_FILES[@]}" -ne "${MAX_ROUTES}" ]; then
   echo "internal error: bounded batch must contain exactly four routes" >&2
   exit 70
 fi
-
-mkdir -p "${DATA_ROOT}" "${RESULT_ROOT}/logs" "${RESULT_ROOT}/checkpoints" \
-  "${RESULT_ROOT}/audits"
-: > "${RUN_LOG}"
-printf 'route\tbackground\tevaluator_exit\tphase1_audit_exit\tview_audit_exit\ttotal_frames\ttotal_bytes\n' \
-  > "${STATUS_FILE}"
 
 export CUDA_VISIBLE_DEVICES=${GPU}
 export CHALLENGE_TRACK_CODENAME=SENSORS

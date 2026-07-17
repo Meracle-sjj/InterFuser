@@ -2,9 +2,9 @@
 # data/ 是采集产物 (GB 级); results/ 是运行/调试产物; carla 是外部依赖(符号链接)。
 # 注意: results/ 下已有的 17 个 tracked 文件 (历史遗留 log/sh) 不受此规则影响,
 # 但未来新文件不会再溜进来。要清已 tracked 的需 git rm, 是独立动作。
-data/
-results/
-carla
+/data/
+/results/
+/carla
 
 # Python 缓存
 __pycache__/

@@ -1,3 +1,4 @@
+import os
 import numpy as np
 from collections import deque
 from team_code.render import render, render_self_car, find_peak_box
@@ -88,6 +89,24 @@ def get_max_safe_distance(meta_data, downsampled_waypoints, t, collision_buffer,
     return safe_distance
 
 class InterfuserController(object):
+    @staticmethod
+    def _red_light_junction_probability(raw_junction, aux_junction=None):
+        source = os.environ.get("INTERFUSER_CONTROL_JUNCTION_SOURCE", "consensus").lower()
+        if source in ("raw", "model", "interfuser"):
+            return raw_junction
+        if source in ("aux", "auxiliary", "junction_model"):
+            if aux_junction is not None:
+                return aux_junction
+            return raw_junction
+        if source in ("consensus", "agree", "both"):
+            if aux_junction is not None:
+                return min(raw_junction, aux_junction)
+            return raw_junction
+        raise ValueError(
+            "INTERFUSER_CONTROL_JUNCTION_SOURCE must be one of: "
+            "consensus, agree, both, aux, auxiliary, junction_model, raw, model, interfuser"
+        )
+
     def __init__(self, config):
         self.turn_controller = PIDController(
             K_P=config.turn_KP, K_I=config.turn_KI, K_D=config.turn_KD, n=config.turn_n
@@ -114,7 +133,14 @@ class InterfuserController(object):
         self.stop_sign_trigger_times = 0
 
     def run_step(
-        self, speed, waypoints, junction, traffic_light_state, stop_sign, meta_data
+        self,
+        speed,
+        waypoints,
+        junction,
+        traffic_light_state,
+        stop_sign,
+        meta_data,
+        aux_junction=None,
     ):
         """
         speed: int, m/s
@@ -123,6 +149,7 @@ class InterfuserController(object):
         traffic_light_state: float, prob of the traffic light state is Red or Yellow
         stop_sign: float, prob of not at stop_sign
         meta_data: 20 * 20 * 7
+        aux_junction: optional auxiliary junction probability used for red-light gating
         """
         if speed < 0.2:
             self.stop_steps += 1
@@ -222,6 +249,7 @@ class InterfuserController(object):
         d_05 = max(0, d_05 - 2.0)
         d_1 = max(0, d_1 - 2.0)
 
+        red_light_junction = self._red_light_junction_probability(junction, aux_junction)
         if d_0 < max(3, speed):
             brake = True
             desired_speed = 0.0
@@ -234,7 +262,7 @@ class InterfuserController(object):
                     2 * d_1 - 0.5 * speed - max(0, speed - 2.5),
                 ),
             )
-            if junction > 0.5 and traffic_light_state > 0.3:
+            if red_light_junction > 0.5 and traffic_light_state > 0.3:
                 brake = True
                 desired_speed = 0.0
         desired_speed = desired_speed if brake is False else 0.0
@@ -288,6 +316,8 @@ class InterfuserController(object):
             "d_1": float(d_1),
             "aim_x": float(aim[0]),
             "aim_y": float(aim[1]),
+            "raw_junction": float(junction),
+            "red_light_junction": float(red_light_junction),
             "stop_steps": int(self.stop_steps),
             "in_stop_sign_effect": bool(self.in_stop_sign_effect),
         }

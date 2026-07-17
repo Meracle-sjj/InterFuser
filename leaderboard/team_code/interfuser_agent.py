@@ -657,6 +657,7 @@ class InterfuserAgent(autonomous_agent.AutonomousAgent):
             traffic_light_state,
             stop_sign,
             self.traffic_meta_moving_avg,
+            aux_junction=new_junction_prediction,
         )
         control_debug = meta_infos[4] if len(meta_infos) > 4 else {}
         lane_debug = self._get_lane_debug()
@@ -764,6 +765,10 @@ class InterfuserAgent(autonomous_agent.AutonomousAgent):
             "target_y": float(tick_data["target_point"][1]),
             "raw_target_x": float(tick_data.get("target_point_raw", tick_data["target_point"])[0]),
             "raw_target_y": float(tick_data.get("target_point_raw", tick_data["target_point"])[1]),
+            "net_is_junction": float(is_junction),
+            "traffic_light_state": float(traffic_light_state),
+            "stop_sign": float(stop_sign),
+            "aux_junction": float(new_junction_prediction),
             "pred0_x": float(pred_waypoints[0, 0]),
             "pred0_y": float(pred_waypoints[0, 1]),
             "pred1_x": float(pred_waypoints[1, 0]),
@@ -808,6 +813,12 @@ class InterfuserAgent(autonomous_agent.AutonomousAgent):
                 "target_y",
                 "raw_target_x",
                 "raw_target_y",
+                "net_is_junction",
+                "traffic_light_state",
+                "stop_sign",
+                "aux_junction",
+                "raw_junction",
+                "red_light_junction",
                 "pred0_x",
                 "pred0_y",
                 "pred1_x",

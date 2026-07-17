@@ -181,4 +181,12 @@ Overlay colors are BGR:
 | Route corridor | `(0, 180, 0)` |
 | Painted-line candidate | `(0, 255, 255)` |
 
+Recommended stop pose markers (`(255, 0, 0)`, BGR red cross) are only drawn
+when the target projects inside the image (`projection_status: projected`). When
+the target is close and low, the recommended stop pose may project beyond the
+bottom edge of the frame (`projection_status: outside_image`); in that case no
+marker is drawn and the absence is not an overlay bug. Inspect the source JSON
+`projection_status` field to confirm. (Observed on frame 0046 of the
+`20260716_leaderboard_stop_targets_camera_fix` batch.)
+
 Learned junction outputs never generate or validate evidence.

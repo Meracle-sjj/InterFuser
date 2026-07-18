@@ -123,6 +123,31 @@ The signed route distance is authoritative. A target between -10 m and 0 m is
 retained as recently crossed. The nearest valid non-negative target is the
 only target allowed to set `primary_for_ego=true`.
 
+## Virtual-boundary training export
+
+The Leaderboard infraction boundary is privileged simulator supervision for a
+behavioral stop boundary. It is not a visible-road-marking segmentation label.
+Training inputs must retain the original RGB bytes; colored review overlays must
+never be used as model inputs.
+
+Export projected boundaries as separate binary masks and structured geometry:
+
+```bash
+python tools/data/export_stop_boundary_labels.py <dataset-root> \
+  --output-dir <empty-output-dir> --camera front
+```
+
+The exporter writes one mask per projected target plus `manifest.jsonl`. Each
+manifest entry links the untouched source RGB and records image endpoints,
+ego-BEV endpoints in forward/right meters, the recommended stop pose, signed
+route distance, crossing state, owning traffic lights, and light states. Use
+`--primary-only` when training should include only the nearest valid non-negative
+route target.
+
+The exported label type is `leaderboard_virtual_stop_boundary`. It must remain
+separate from evidence-schema `painted_line`, which describes an optional
+physical road marking.
+
 ## Unknown policy
 
 Ambiguous or incomplete geometry is stored with `status="unknown"` and an

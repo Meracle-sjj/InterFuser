@@ -1,20 +1,11 @@
 #!/usr/bin/env python3
-"""Recompute painted-line candidate status from stored RGB/depth/semantic (dry-run, read-only).
+"""Audit optional painted-line candidates from stored sensor evidence.
 
-The collection-time view builder never injected the RGB frame into the camera
-record, so ``camera.get("rgb")`` was always ``None`` and
-``find_painted_line_candidate`` was never invoked — every ``painted_line`` on
-disk is the default ``{"status": "unknown", ...}`` placeholder
-(``traffic_element_projection.py`` gate at the ``camera.get("rgb") is not None``
-check).
-
-This script reloads the stored per-frame RGB/depth/semantic evidence and reruns
-``find_painted_line_candidate`` for every stop target whose boundary and corridor
-both projected into the image. It reports the would-be candidate hit rate so we
-can decide whether the existing batch is salvageable without rewriting files.
-
-This is a DRY-RUN ONLY tool: it reads files and prints a summary; it never
-modifies any stored JSON. A future revision may add a ``--write`` switch.
+This dry-run tool reruns the visible road-marking detector near each projected
+Leaderboard boundary. A virtual infraction boundary is valid even when no
+painted line exists, so a zero candidate rate is not a label or collection
+failure. This tool never creates virtual stop-boundary labels and never modifies
+stored JSON.
 """
 
 import argparse
@@ -86,7 +77,7 @@ def _load_semantic(route_run, camera, frame_id):
 
 
 def _eligible_for_recompute(target):
-    """Mirror the in-memory gate (minus the always-false rgb check)."""
+    """Return whether stored evidence can be checked for a painted line."""
     boundary = target.get("boundary", {})
     corridor = target.get("corridor", {})
     return (

@@ -104,6 +104,9 @@ missing or failed sensors use `sensor_unavailable` or `projection_error`.
 ## Painted-line review evidence
 
 A painted line is optional. It is not required for a valid stop target.
+CARLA roads may have a valid Leaderboard infraction boundary without rendering
+a transverse white marking. Consequently, zero painted-line candidates is a
+valid dataset outcome and must not fail collection or evidence audit.
 
 Automatic extraction is constrained to the projected corridor. It uses Canny
 edges and probabilistic Hough segments, then requires:
@@ -176,7 +179,7 @@ Overlay colors are BGR:
 | Layer | Color |
 | --- | --- |
 | Trigger waypoint | `(255, 255, 0)` |
-| Leaderboard boundary | `(255, 0, 255)` |
+| Leaderboard virtual infraction boundary | `(255, 0, 255)` |
 | Recommended stop pose | `(255, 0, 0)` |
 | Route corridor | `(0, 180, 0)` |
 | Painted-line candidate | `(0, 255, 255)` |
@@ -190,3 +193,8 @@ marker is drawn and the absence is not an overlay bug. Inspect the source JSON
 `20260716_leaderboard_stop_targets_camera_fix` batch.)
 
 Learned junction outputs never generate or validate evidence.
+
+For model training, use `tools/data/export_stop_boundary_labels.py` to export
+the projected virtual boundary into a separate binary mask and geometry
+manifest. The exporter references untouched RGB frames and does not consume or
+promote `painted_line` evidence.

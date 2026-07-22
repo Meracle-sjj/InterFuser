@@ -2,7 +2,7 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 状态 | **CALIBRATING：协议已定义，正式基线尚未冻结** |
+| 状态 | **FROZEN：D7 三种子已完成，A36 主比较集与统计口径已冻结** |
 | 生效日期 | 2026-07-22 |
 | 研究目标 | 为 B0、V、L、V+L 四组实验提供同一套可复现闭环评价 |
 | 机器配置 | `configs/thesis/baseline_eval_v1.json` |
@@ -102,9 +102,9 @@ M0 只有满足以下条件才能从 `CALIBRATING` 改为 `FROZEN`：
 5. 已决定 A36 是否足以作为论文主集，并在正文中如实描述 Town06 缺失；
 6. 基线结果不再依赖 `results/` 内未版本化脚本解释关键参数。
 
-P0 由 `tools/evaluation/preflight_thesis_baseline.py` 实现，D7 runner 由 `tools/evaluation/run_thesis_baseline.py` 实现。runner 默认只生成计划；只有显式传入 `--execute` 才启动 CARLA。配置分别记录 agent CUDA 设备和 CARLA graphics adapter，命令行覆盖必须写入 run manifest。
+P0 由 `tools/evaluation/preflight_thesis_baseline.py` 实现，D7 runner 由 `tools/evaluation/run_thesis_baseline.py` 实现，确定性汇总由 `tools/evaluation/summarize_thesis_baseline.py` 实现。runner 默认只生成计划；只有显式传入 `--execute` 才启动 CARLA。配置分别记录 agent CUDA 设备和 CARLA graphics adapter，命令行覆盖必须写入 run manifest。
 
-当前下一步是先对完整 D7 生成 dry-run 计划，再用 route 18 / seed 0 验证一条真实场景链路；单路线有效后才允许扩展到 D7 单种子，不立即重跑 36 条路线。
+截至 2026-07-23，D7 的路线 `00、06、12、18、30、36、39` 已在种子 `0、1、2` 下得到 `21/21 pipeline valid` 结果。冻结汇总位于 `results/thesis_m0/d7_b0_three_seed_summary_20260722T1653Z.json`，SHA-256 为 `41ce89b89915f1a747b4eb3b37b4a6d5e65468cb0fc580c308437f9c75d70459`；相同输入按反序复算仍得到字节一致输出。A36 明确作为论文主比较集，Town06 在地图安装前不进入分母。
 
 具体运行事实不追加到本协议，统一记录在 `docs/experiment_records/`，并以 run ID 和 SHA-256 指向 `results/thesis_m0/` 原始产物。
 

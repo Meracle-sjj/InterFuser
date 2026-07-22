@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "calibrating",
+  "status": "frozen",
   "protocol_document": "docs/baseline_evaluation_protocol_v1.md",
   "code_anchor": "1d9168650711b46d6f2e754005b864c165a10f50",
   "runtime_code_roots": ["interfuser", "leaderboard", "scenario_runner"],

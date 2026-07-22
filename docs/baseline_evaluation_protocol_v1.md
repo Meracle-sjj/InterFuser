@@ -106,4 +106,6 @@ P0 由 `tools/evaluation/preflight_thesis_baseline.py` 实现，D7 runner 由 `t
 
 当前下一步是先对完整 D7 生成 dry-run 计划，再用 route 18 / seed 0 验证一条真实场景链路；单路线有效后才允许扩展到 D7 单种子，不立即重跑 36 条路线。
 
+具体运行事实不追加到本协议，统一记录在 `docs/experiment_records/`，并以 run ID 和 SHA-256 指向 `results/thesis_m0/` 原始产物。
+
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

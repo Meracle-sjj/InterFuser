@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 [INPUT]: 依赖通过 P0 的 baseline_eval JSON、runtime_resources 资源守卫、CARLA/Leaderboard 运行时与冻结 checkpoint。
-[OUTPUT]: 对外提供 RunnerError、build_run_plan、write_single_route_xml、parse_leaderboard_result、execute_run_plan 与 CLI，生成隔离的 route/seed 原始结果和 manifest。
+[OUTPUT]: 对外提供 RunnerError、build_run_plan、write_single_route_xml、parse_leaderboard_result、execute_run_plan 与 CLI，生成隔离的 route/seed 原始结果、资源退出状态和显式基础设施失败原因。
 [POS]: tools/evaluation 的 M0 配置驱动 runner，位于静态预检之后、统计汇总之前；用短命子进程隔离 CARLA 原生 RPC 故障，显式 --execute 才启动外部进程。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -329,6 +329,35 @@ def parse_leaderboard_result(path):
     return parsed
 
 
+def _pipeline_failure_reason(attempt_manifest):
+    """Describe why an attempt is infrastructure-invalid without reclassifying scores."""
+    reasons = []
+    if attempt_manifest.get("carla_exited_before_cleanup"):
+        reasons.append(
+            "CARLA exited before runner cleanup with code "
+            f"{attempt_manifest.get('carla_exit_code')}"
+        )
+    if attempt_manifest.get("external_timeout"):
+        reasons.append("evaluator exceeded the external timeout")
+    process_exit_code = attempt_manifest.get("process_exit_code")
+    if process_exit_code not in (None, 0):
+        reasons.append(f"evaluator exited with code {process_exit_code}")
+    leaderboard_result = attempt_manifest.get("leaderboard_result") or {}
+    if not leaderboard_result.get("valid", False) and leaderboard_result.get("error"):
+        reasons.append(f"Leaderboard result invalid: {leaderboard_result['error']}")
+    if attempt_manifest.get("cleanup_error"):
+        reasons.append(f"cleanup failed: {attempt_manifest['cleanup_error']}")
+    return "; ".join(reasons) or "pipeline validity conditions were not met"
+
+
+def _finalize_pipeline_status(attempt_manifest):
+    """Make late CARLA exits visible and attach one stable failure explanation."""
+    if attempt_manifest.get("carla_exited_before_cleanup"):
+        attempt_manifest["pipeline_valid"] = False
+    if not attempt_manifest.get("pipeline_valid") and not attempt_manifest.get("error"):
+        attempt_manifest["error"] = _pipeline_failure_reason(attempt_manifest)
+
+
 def _python_environment(repo_root, plan, attempt, save_path):
     env = os.environ.copy()
     runtime = plan["runtime"]
@@ -466,6 +495,7 @@ def _execute_attempt(repo_root, plan, run_dir, attempt):
         "carla_command": None,
         "carla_pid": None,
         "carla_exit_code": None,
+        "carla_exited_before_cleanup": None,
         "evaluator_pid": None,
         "duration_seconds": None,
         "gpu_memory_before_mb": None,
@@ -574,6 +604,10 @@ def _execute_attempt(repo_root, plan, run_dir, attempt):
         except RunnerError as exc:
             cleanup_errors.append(f"evaluator cleanup: {exc}")
         try:
+            if carla_process is not None:
+                attempt_manifest["carla_exited_before_cleanup"] = (
+                    carla_process.poll() is not None
+                )
             attempt_manifest["carla_exit_code"] = _stop_process_group(carla_process)
         except RunnerError as exc:
             cleanup_errors.append(f"CARLA cleanup: {exc}")
@@ -593,6 +627,7 @@ def _execute_attempt(repo_root, plan, run_dir, attempt):
         if cleanup_errors:
             attempt_manifest["cleanup_error"] = "; ".join(cleanup_errors)
             attempt_manifest["pipeline_valid"] = False
+        _finalize_pipeline_status(attempt_manifest)
         evaluator_log.close()
         carla_log.close()
         attempt_manifest["finished_at"] = _utc_now()

@@ -1,6 +1,6 @@
 """
-[INPUT]: 依赖 tools.evaluation.run_thesis_baseline 的计划、路线拆分、资源门禁、隔离式 CARLA RPC、结果解析和执行编排 API，并使用临时配置构造最小 P0 合法输入。
-[OUTPUT]: 提供 D7 计划、原生 RPC 崩溃隔离、驾驶失败保留、资源释放和 pipeline-invalid 立即终止的回归测试。
+[INPUT]: 依赖 tools.evaluation.run_thesis_baseline 的计划、路线拆分、资源门禁、隔离式 CARLA RPC、结果解析、基础设施失败分类和执行编排 API，并使用临时配置构造最小 P0 合法输入。
+[OUTPUT]: 提供 D7 计划、原生 RPC 崩溃隔离、晚发 CARLA 退出分类、驾驶失败保留、资源释放和 pipeline-invalid 立即终止的回归测试。
 [POS]: tests 的 M0 runner 纯逻辑测试，不启动 CARLA；外部进程生命周期由真实单路线 smoke 进一步验证。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -17,6 +17,7 @@ from unittest.mock import Mock, patch
 
 from tools.evaluation.run_thesis_baseline import (
     RunnerError,
+    _finalize_pipeline_status,
     _run_carla_startup_rpc,
     _wait_for_carla,
     build_run_plan,
@@ -284,6 +285,27 @@ class ThesisBaselineRunnerTests(unittest.TestCase):
         self.assertEqual(loaded_map, "Carla/Maps/Town04_Opt")
         self.assertEqual(probe.call_count, 2)
         sleep.assert_called_once_with(2)
+
+    def test_late_carla_crash_invalidates_an_otherwise_complete_result(self):
+        attempt = {
+            "pipeline_valid": True,
+            "carla_exited_before_cleanup": True,
+            "carla_exit_code": 139,
+            "process_exit_code": -6,
+            "external_timeout": False,
+            "cleanup_error": None,
+            "error": None,
+            "leaderboard_result": {"valid": True, "status": "Completed"},
+        }
+
+        _finalize_pipeline_status(attempt)
+
+        self.assertFalse(attempt["pipeline_valid"])
+        self.assertEqual(
+            attempt["error"],
+            "CARLA exited before runner cleanup with code 139; "
+            "evaluator exited with code -6",
+        )
 
     def test_execute_plan_stops_after_first_pipeline_invalid_attempt(self):
         with tempfile.TemporaryDirectory() as root:

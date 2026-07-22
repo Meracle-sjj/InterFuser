@@ -2,7 +2,7 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 状态 | **PILOT-GATED：类别契约已提出，现有数据未达到预训练门槛** |
+| 状态 | **PILOT-READY：索引分层抽样已通过，split 与人工对齐复核待冻结** |
 | 生效日期 | 2026-07-22 |
 | 服务假设 | H1：交通域 ResNet-50 预训练改善语义质量、时序稳定性与闭环表现 |
 | 类别配置 | `configs/thesis/semantic_classes_v1.json` |
@@ -50,6 +50,18 @@
 | Bus / Motorcycle / Bicycle | 0 | 0 | 0 |
 
 结论：该批数据是停车点附近的路口标签验证集，交通灯占比很高，但车辆像素极少且完全缺少行人、摩托车和自行车。它不能直接承担交通语义 ResNet-50 预训练，只能作为采集管线 smoke test 与路口样本来源。
+
+### 3.1 Dataset index 分层 pilot
+
+对 `/data1/shijj/interfuser_data/dataset_index.txt` 使用审计器提交 `0fac3e6`，以 sample seed `20260722` 按 Town×weather stratum 最多抽 3 个完整 sequence，固定 `front、left、right` 三相机并启用 `--require-ready`。报告位于：
+
+`results/thesis_m1/semantic_index_pilot_town_weather_n3_seed20260722_20260722T0847Z.json`
+
+冻结 provenance：dataset index SHA-256 为 `56c83f46a1010ee43021bbc2f97cafde9b3c2771522088ae938a2df2ea477ff1`，类别配置 SHA-256 为 `796222592efb68407a32bfdf9a03907b4631cf3f30d0d6a81528010e50f0b612`，报告 SHA-256 为 `16162c5167cbe994c8e22ca5224069f913989c6ca583dbec234ce18285de2614`。
+
+该 pilot 从 9,968 个 index sequence 中选择 176 个，覆盖 60 个分层、4 个 Town、3,619 个逻辑帧与 10,857 张语义 mask；报告为 `valid=true`、`ready=true`、结构错误 0，全部核心类别通过 qualified-mask 与 sequence 覆盖门槛。Town04 weather 15 和 weather 20 各仅有 1 个候选，因此审计器按 `min(3, available)` 全部纳入，最终数量不是理论值 180；这是冻结的数据覆盖边界，不得隐去。
+
+本次结果证明可复现抽样达到 pilot 准入，不代表已全量扫描 9,968 个 sequence，也不替代 sequence 级 split manifest 与人工 RGB/mask 对齐复核。
 
 ## 4. Pilot readiness 门槛
 
@@ -104,6 +116,6 @@ M1 只有满足以下条件才能完成：
 5. 每个核心类别至少人工检查一组 RGB/mask 对齐样本；
 6. 固化数据版本、审计 JSON 和采集配置后，才能进入 M2 预训练。
 
-当前下一步是补采普通道路与弱势参与者数据，不是继续扩大停车点标签复杂度。
+当前下一步是基于完整 sequence 冻结无泄漏 split manifest，并为每个核心类别人工复核一组 RGB/mask 对齐样本；若后续需要补齐 Town04 weather 15/20，应进行最小定向补采，而不是盲目全量扫描或扩大停车点标签复杂度。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

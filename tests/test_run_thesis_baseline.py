@@ -1,6 +1,6 @@
 """
-[INPUT]: 依赖 tools.evaluation.run_thesis_baseline 的计划、路线拆分、端口门禁、端口释放等待和 Leaderboard 结果解析 API，并使用临时配置构造最小 P0 合法输入。
-[OUTPUT]: 提供 D7 route/seed 选择、GPU 覆盖留痕、单路线 XML、驾驶失败保留、端口占用拒绝及延迟释放等待的回归测试。
+[INPUT]: 依赖 tools.evaluation.run_thesis_baseline 的计划、路线拆分、资源门禁、结果解析和执行编排 API，并使用临时配置构造最小 P0 合法输入。
+[OUTPUT]: 提供 D7 计划、驾驶失败保留、端口门禁、延迟释放等待和 pipeline-invalid 立即终止的回归测试。
 [POS]: tests 的 M0 runner 纯逻辑测试，不启动 CARLA；外部进程生命周期由真实单路线 smoke 进一步验证。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -18,6 +18,7 @@ from tools.evaluation.run_thesis_baseline import (
     RunnerError,
     build_run_plan,
     ensure_ports_free,
+    execute_run_plan,
     parse_leaderboard_result,
     wait_for_ports_free,
     write_single_route_xml,
@@ -230,12 +231,12 @@ class ThesisBaselineRunnerTests(unittest.TestCase):
 
     def test_port_release_waits_for_listener_shutdown(self):
         with patch(
-            "tools.evaluation.run_thesis_baseline._port_is_open",
+            "tools.evaluation.runtime_resources._port_is_open",
             side_effect=[True, True, False],
         ), patch(
-            "tools.evaluation.run_thesis_baseline.time.monotonic",
+            "tools.evaluation.runtime_resources.time.monotonic",
             side_effect=[0.0, 0.0, 0.1, 0.2],
-        ), patch("tools.evaluation.run_thesis_baseline.time.sleep") as sleep:
+        ), patch("tools.evaluation.runtime_resources.time.sleep") as sleep:
             elapsed = wait_for_ports_free([2155], timeout_seconds=1, poll_seconds=0.1)
 
         self.assertEqual(elapsed, 0.2)
@@ -243,13 +244,48 @@ class ThesisBaselineRunnerTests(unittest.TestCase):
 
     def test_port_release_times_out_while_listener_remains_open(self):
         with patch(
-            "tools.evaluation.run_thesis_baseline._port_is_open", return_value=True
+            "tools.evaluation.runtime_resources._port_is_open", return_value=True
         ), patch(
-            "tools.evaluation.run_thesis_baseline.time.monotonic",
+            "tools.evaluation.runtime_resources.time.monotonic",
             side_effect=[0.0, 0.0, 1.0],
-        ), patch("tools.evaluation.run_thesis_baseline.time.sleep"):
+        ), patch("tools.evaluation.runtime_resources.time.sleep"):
             with self.assertRaisesRegex(RunnerError, "2155"):
                 wait_for_ports_free([2155], timeout_seconds=0.5, poll_seconds=0.1)
+
+    def test_execute_plan_stops_after_first_pipeline_invalid_attempt(self):
+        with tempfile.TemporaryDirectory() as root:
+            config_path = Path(root) / "config.json"
+            config_path.write_text("{}", encoding="utf-8")
+            attempts = [{"attempt_id": "first"}, {"attempt_id": "second"}]
+            plan = {
+                "runtime": {
+                    "gpu_busy_memory_threshold_mb": 1024,
+                    "agent_cuda_visible_device": 0,
+                    "carla_graphics_adapter": 1,
+                    "carla_port": 2155,
+                    "traffic_manager_port": 2255,
+                },
+                "run_directory": str(Path(root) / "run"),
+                "config_path": str(config_path),
+                "config_sha256": "fixture",
+                "attempts": attempts,
+            }
+            invalid = {"attempt_id": "first", "pipeline_valid": False, "error": "busy"}
+            with patch(
+                "tools.evaluation.run_thesis_baseline.ensure_gpus_available",
+                return_value={0: 0, 1: 0},
+            ), patch(
+                "tools.evaluation.run_thesis_baseline.ensure_ports_free"
+            ), patch(
+                "tools.evaluation.run_thesis_baseline._execute_attempt",
+                return_value=invalid,
+            ) as execute:
+                with self.assertRaisesRegex(RunnerError, "first pipeline invalid"):
+                    execute_run_plan(plan, repo_root=root)
+
+            execute.assert_called_once()
+            manifest = json.loads((Path(root) / "run" / "run_manifest.json").read_text())
+            self.assertEqual(manifest["summary"]["recorded_attempts"], 1)
 
 
 if __name__ == "__main__":

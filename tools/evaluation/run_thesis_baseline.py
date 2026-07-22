@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-[INPUT]: 依赖通过 P0 的 baseline_eval JSON、CARLA/Leaderboard 运行时、冻结 checkpoint，以及空闲端口和 GPU。
-[OUTPUT]: 对外提供 RunnerError、build_run_plan、write_single_route_xml、parse_leaderboard_result、wait_for_ports_free、execute_run_plan 与 CLI，生成隔离的 route/seed 原始结果和 manifest。
+[INPUT]: 依赖通过 P0 的 baseline_eval JSON、runtime_resources 资源守卫、CARLA/Leaderboard 运行时与冻结 checkpoint。
+[OUTPUT]: 对外提供 RunnerError、build_run_plan、write_single_route_xml、parse_leaderboard_result、execute_run_plan 与 CLI，生成隔离的 route/seed 原始结果和 manifest。
 [POS]: tools/evaluation 的 M0 配置驱动 runner，位于静态预检之后、统计汇总之前；默认 dry-run，显式 --execute 才启动外部进程。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -13,11 +13,9 @@ import json
 import os
 import re
 import shutil
-import signal
 import socket
 import subprocess
 import sys
-import threading
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
@@ -33,17 +31,20 @@ from tools.evaluation.preflight_thesis_baseline import (  # noqa: E402
     PreflightError,
     preflight_baseline,
 )
+from tools.evaluation.runtime_resources import (  # noqa: E402
+    RunnerError,
+    _GpuMemoryMonitor,
+    _stop_process_group,
+    ensure_gpus_available,
+    ensure_ports_free,
+    wait_for_gpus_available,
+    wait_for_ports_free,
+)
 
 
 RUN_PLAN_SCHEMA_VERSION = 1
 RUN_MANIFEST_SCHEMA_VERSION = 1
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$")
-PORT_RELEASE_TIMEOUT_SECONDS = 60
-PORT_RELEASE_POLL_SECONDS = 0.5
-
-
-class RunnerError(RuntimeError):
-    """Raised when a run cannot be planned or executed without ambiguity."""
 
 
 def _utc_now():
@@ -309,102 +310,6 @@ def parse_leaderboard_result(path):
     return parsed
 
 
-def _port_is_open(port):
-    try:
-        with socket.create_connection(("127.0.0.1", int(port)), timeout=0.25):
-            return True
-    except OSError:
-        return False
-
-
-def ensure_ports_free(ports):
-    occupied = [int(port) for port in ports if _port_is_open(port)]
-    if occupied:
-        raise RunnerError(f"required ports are already in use: {occupied}")
-
-
-def wait_for_ports_free(
-    ports,
-    timeout_seconds=PORT_RELEASE_TIMEOUT_SECONDS,
-    poll_seconds=PORT_RELEASE_POLL_SECONDS,
-):
-    """Wait for a runner-owned CARLA process to finish releasing its sockets."""
-    ports = [int(port) for port in ports]
-    started = time.monotonic()
-    deadline = started + max(0.0, float(timeout_seconds))
-    while True:
-        occupied = [port for port in ports if _port_is_open(port)]
-        if not occupied:
-            return round(time.monotonic() - started, 3)
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise RunnerError(f"ports did not become free after shutdown: {occupied}")
-        time.sleep(min(float(poll_seconds), remaining))
-
-
-def _gpu_memory_usage():
-    result = subprocess.run(
-        [
-            "nvidia-smi",
-            "--query-gpu=index,memory.used",
-            "--format=csv,noheader,nounits",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise RunnerError(f"unable to query GPU usage: {result.stderr.strip()}")
-    usage = {}
-    for line in result.stdout.splitlines():
-        fields = [item.strip() for item in line.split(",")]
-        if len(fields) == 2:
-            usage[int(fields[0])] = int(fields[1])
-    return usage
-
-
-def ensure_gpus_available(indices, threshold_mb):
-    usage = _gpu_memory_usage()
-    failures = []
-    for index in sorted(set(indices)):
-        if index not in usage:
-            failures.append(f"GPU {index} is unavailable")
-        elif usage[index] > threshold_mb:
-            failures.append(
-                f"GPU {index} uses {usage[index]} MiB, above {threshold_mb} MiB"
-            )
-    if failures:
-        raise RunnerError("; ".join(failures))
-    return usage
-
-
-class _GpuMemoryMonitor:
-    def __init__(self, indices):
-        self.indices = sorted(set(indices))
-        self.peaks = {index: 0 for index in self.indices}
-        self.error = None
-        self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._sample, daemon=True)
-
-    def _sample(self):
-        while not self._stop.is_set():
-            try:
-                usage = _gpu_memory_usage()
-                for index in self.indices:
-                    self.peaks[index] = max(self.peaks[index], usage.get(index, 0))
-            except RunnerError as exc:
-                self.error = str(exc)
-            self._stop.wait(1.0)
-
-    def start(self):
-        self._thread.start()
-
-    def stop(self):
-        self._stop.set()
-        self._thread.join(timeout=5)
-        return {str(index): value for index, value in self.peaks.items()}
-
-
 def _python_environment(repo_root, plan, attempt, save_path):
     env = os.environ.copy()
     runtime = plan["runtime"]
@@ -443,22 +348,6 @@ def _python_environment(repo_root, plan, attempt, save_path):
         library_paths.append(Path(env["LD_LIBRARY_PATH"]))
     env["LD_LIBRARY_PATH"] = os.pathsep.join(str(path) for path in library_paths)
     return env
-
-
-def _stop_process_group(process, grace_seconds=20):
-    if process is None or process.poll() is not None:
-        return None if process is None else process.returncode
-    try:
-        os.killpg(process.pid, signal.SIGTERM)
-        process.wait(timeout=grace_seconds)
-    except (ProcessLookupError, subprocess.TimeoutExpired):
-        if process.poll() is None:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            process.wait(timeout=10)
-    return process.returncode
 
 
 def _carla_client(repo_root, port, timeout_seconds):
@@ -542,6 +431,7 @@ def _execute_attempt(repo_root, plan, run_dir, attempt):
         "gpu_peak_memory_mb": None,
         "gpu_monitor_error": None,
         "port_release_wait_seconds": None,
+        "gpu_release_wait_seconds": None,
         "cleanup_error": None,
         "error": None,
         "leaderboard_result": None,
@@ -635,16 +525,31 @@ def _execute_attempt(repo_root, plan, run_dir, attempt):
     except Exception as exc:
         attempt_manifest["error"] = f"{type(exc).__name__}: {exc}"
     finally:
-        _stop_process_group(evaluator_process, grace_seconds=10)
-        attempt_manifest["carla_exit_code"] = _stop_process_group(carla_process)
+        cleanup_errors = []
+        try:
+            _stop_process_group(evaluator_process, grace_seconds=10)
+        except RunnerError as exc:
+            cleanup_errors.append(f"evaluator cleanup: {exc}")
+        try:
+            attempt_manifest["carla_exit_code"] = _stop_process_group(carla_process)
+        except RunnerError as exc:
+            cleanup_errors.append(f"CARLA cleanup: {exc}")
         if carla_process is not None:
             try:
                 attempt_manifest["port_release_wait_seconds"] = wait_for_ports_free(
                     [runtime["carla_port"], runtime["traffic_manager_port"]]
                 )
             except RunnerError as exc:
-                attempt_manifest["cleanup_error"] = str(exc)
-                attempt_manifest["pipeline_valid"] = False
+                cleanup_errors.append(str(exc))
+            try:
+                attempt_manifest["gpu_release_wait_seconds"] = wait_for_gpus_available(
+                    gpu_indices, runtime["gpu_busy_memory_threshold_mb"]
+                )
+            except RunnerError as exc:
+                cleanup_errors.append(str(exc))
+        if cleanup_errors:
+            attempt_manifest["cleanup_error"] = "; ".join(cleanup_errors)
+            attempt_manifest["pipeline_valid"] = False
         evaluator_log.close()
         carla_log.close()
         attempt_manifest["finished_at"] = _utc_now()
@@ -736,10 +641,11 @@ def execute_run_plan(plan, repo_root=REPO_ROOT, resume=False):
         }
         manifest["updated_at"] = _utc_now()
         _write_json_atomic(manifest_path, manifest)
-        if result.get("cleanup_error"):
-            raise RunnerError(
-                f"{attempt['attempt_id']} cleanup failed: {result['cleanup_error']}"
-            )
+        if not result.get("pipeline_valid"):
+            reason = result.get("error") or result.get("cleanup_error")
+            leaderboard_result = result.get("leaderboard_result") or {}
+            reason = reason or leaderboard_result.get("error") or "see attempt manifest"
+            raise RunnerError(f"{attempt['attempt_id']} pipeline invalid: {reason}")
 
     return manifest
 

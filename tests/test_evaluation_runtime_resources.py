@@ -1,7 +1,7 @@
 """
-[INPUT]: 依赖 tools.evaluation.runtime_resources 的进程组回收与 GPU 释放等待 API，并使用独立 POSIX session 构造忽略 SIGTERM 的子进程。
-[OUTPUT]: 提供 CARLA 包装进程先退出时仍能清理整个进程组、CUDA 显存延迟归零的生命周期回归测试。
-[POS]: tests 的 M0 外部资源回收测试，复现真实 runner 中 shell leader 退出但 CARLA binary 继续存活的故障。
+[INPUT]: 依赖 tools.evaluation.runtime_resources 的进程组回收、GPU 计算 owner 门禁与释放等待 API，并用独立 POSIX session 构造忽略 SIGTERM 的子进程。
+[OUTPUT]: 提供外来 GPU 计算进程拒绝、CARLA 包装进程先退出时整组清理、CUDA 显存延迟归零的生命周期回归测试。
+[POS]: tests 的 M0 外部资源回收测试，覆盖启动前独占性与运行后完整回收两个资源边界。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
@@ -16,11 +16,33 @@ from tools.evaluation.runtime_resources import (
     RunnerError,
     _process_group_exists,
     _stop_process_group,
+    ensure_gpus_available,
     wait_for_gpus_available,
 )
 
 
 class EvaluationRuntimeResourceTests(unittest.TestCase):
+    def test_gpu_gate_rejects_existing_compute_process_below_memory_threshold(self):
+        with patch(
+            "tools.evaluation.runtime_resources._gpu_memory_usage",
+            return_value={6: 81, 7: 706},
+        ), patch(
+            "tools.evaluation.runtime_resources._gpu_compute_processes",
+            return_value={
+                7: [
+                    {
+                        "pid": "1903747",
+                        "process_name": "/external/python",
+                        "used_memory_mb": "2778",
+                    }
+                ]
+            },
+        ):
+            with self.assertRaisesRegex(
+                RunnerError, "GPU 7 has active compute processes: 1903747"
+            ):
+                ensure_gpus_available([6, 7], threshold_mb=1024)
+
     def test_stop_process_group_kills_child_after_leader_exits(self):
         child_code = (
             "import os,signal,time; "

@@ -61,4 +61,14 @@ route39 的初始 `attempt_manifest.json`、`route.xml`、`carla.log` 和空 `ev
 
 定向 runner/资源回归为 `13/13` 通过；带完整 CARLA、Leaderboard 和 Scenario Runner `PYTHONPATH` 的 unittest 为 `149/149` 通过。v3 保持原地不续跑，因为在同一 run manifest 中混用两个 runner hash 会破坏实验 provenance；修复后的 seed0 必须使用新 Run ID 从 7 条路线重新开始。
 
+## 8. v4 GPU compute-owner 门禁事故
+
+readiness 隔离修复提交 `2f99401f3db99e766073501b92f612f9867a1b2a` 后，`b0-d7-seed0-20260722-v4` 在启动前检测到 GPU 7 存在外部计算进程 `PID=1903747`，但旧资源守卫只依赖整卡显存读数与 `1024 MiB` 阈值，当时读数低于阈值而错误放行。这证明“低显存”不等于“无同 GPU 作业”。
+
+v4 在 route18 开始阶段被人工终止，总 manifest 仍为空 attempts/空 summary；原目录、初始 attempt manifest、CARLA/evaluator 日志与中止时的 Leaderboard JSON 全部保留，不进入模型失败或 D7 统计。只回收了 v4 的 launcher、CARLA 与 evaluator，未向外部 PID 发送信号；回收后 `2155/2255` 无监听，GPU 6/7 回到 `81/45 MiB`。
+
+资源门禁必须同时满足两个条件：选定 GPU 显存不超阈值，且通过 GPU UUID 查询不存在任何 active compute process。任一条件失败都必须在启动 CARLA 前拒绝整批。
+
+新门禁的定向 runner/资源回归为 `14/14` 通过；带完整 `PYTHONPATH` 的 unittest 为 `150/150` 通过。
+
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

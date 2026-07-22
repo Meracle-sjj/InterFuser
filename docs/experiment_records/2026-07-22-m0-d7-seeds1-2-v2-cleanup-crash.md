@@ -7,7 +7,7 @@
 | Runner SHA-256 | `7939310f396ef19d6b521220d166c7e7416965a73f3e8ea6d43c6f24c151b347` |
 | Manifest SHA-256 | `54230ed417642c2532b6c66035e6c688ada429e4e1f29dbcc018db3e8c265c88` |
 | 原始结果 | `results/thesis_m0/b0-d7-seeds1-2-20260722-v2/` |
-| 结论 | **批次无效并已 fail-fast；清理顺序修复通过前不得重跑完整 seeds1/2** |
+| 结论 | **v2 批次无效并已 fail-fast；清理顺序修复已通过定向 smoke，允许新 Run ID 完整重跑** |
 
 ## 1. 有效前缀与停止边界
 
@@ -34,5 +34,16 @@ route6 seed1 在注册路线统计后，CARLA 再次以 SIGSEGV 退出：`carla_
 修复提交 `1d91686` 推送后，首个 smoke Run ID `b0-d7-route6-seeds1-2-cleanup-smoke-20260722-v1` 被 P0 在创建 manifest 和启动 CARLA 前拒绝：配置仍指向旧 evaluator 哈希和旧运行代码锚点。该 launcher 日志与 PID 文件保留为门禁证据，不属于驾驶 attempt。配置随后只把运行代码锚定到 `1d91686` 并更新 evaluator SHA-256；模型、agent、路线、场景和 checkpoint 契约保持不变。
 
 v2 原目录永久保留且禁止 resume、拼接或覆盖。配置提交推送后，使用另一个新 Run ID 对 route6 seed1/2 做生命周期 smoke；只有 2/2 pipeline valid 且进程、2155/2255、GPU 6/7 全部归零，才允许从 14 个 attempt 完整重跑 seeds1/2。
+
+## 4. 定向 smoke 准入结果
+
+`b0-d7-route6-seeds1-2-cleanup-smoke-20260722-v2` 在提交 `eb1c4e2` 上完成 route6 seed1/2，manifest SHA-256 为 `c3c971eebe664da5da11f82c3fc159b7fea0e563c1fdb695ca15f9e7876eefce`，汇总为 `recorded=2`、`planned=2`、`pipeline_valid=2`、`pipeline_invalid=0`。
+
+| Attempt | DS | RC | IS | CARLA 清理前退出 | CARLA exit | Evaluator exit |
+| --- | ---: | ---: | ---: | --- | ---: | ---: |
+| `route_06_seed_1` | 70.000000 | 100.000000% | 0.700000 | false | -15 | 0 |
+| `route_06_seed_2` | 42.000000 | 100.000000% | 0.420000 | false | -15 | 0 |
+
+两个 attempt 的 CARLA 均由 runner 在 evaluator 正常退出后发送 SIGTERM，未再出现晚发 SIGSEGV。launcher PID `2105608` 已退出，2155/2255 无监听，GPU 6/7 回到 `81/45 MiB` 且无 compute owner；端口释放等待均为 `0.0 s`，GPU 释放等待为 `0.465/0.343 s`。该结果只解除生命周期修复门禁，不进入 D7 三种子成绩聚合；完整 seeds1/2 仍必须从 14 个 attempt 重新运行。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

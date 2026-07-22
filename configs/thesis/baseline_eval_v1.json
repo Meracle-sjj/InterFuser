@@ -2,7 +2,7 @@
   "schema_version": 1,
   "status": "calibrating",
   "protocol_document": "docs/baseline_evaluation_protocol_v1.md",
-  "code_anchor": "138577f823e5e061645b265f7f44cc3ee9ad95ef",
+  "code_anchor": "1d9168650711b46d6f2e754005b864c165a10f50",
   "runtime_code_roots": ["interfuser", "leaderboard", "scenario_runner"],
   "runtime": {
     "python": "3.10.19",
@@ -53,7 +53,7 @@
     },
     "leaderboard_evaluator": {
       "path": "leaderboard/leaderboard/leaderboard_evaluator.py",
-      "sha256": "a823d80d9d68d853eae83ed5dc3efb1f887a12d4e6feb902437c50f3806cf605"
+      "sha256": "490c9bceb4b765c4d5dff86b4a9e34a63eb8bdd4c91561338a1b966502d3e805"
     },
     "leaderboard_route_scenario": {
       "path": "leaderboard/leaderboard/scenarios/route_scenario.py",

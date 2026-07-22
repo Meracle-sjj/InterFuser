@@ -26,7 +26,7 @@
 
 第一轮校准固定以下事实：
 
-- 代码锚点：`138577f823e5e061645b265f7f44cc3ee9ad95ef`；
+- 运行代码锚点：`1d9168650711b46d6f2e754005b864c165a10f50`；该提交只修复 CARLA actor 清理生命周期，模型、agent、路线、场景和 checkpoint 契约不变；
 - 运行时代码根：`interfuser/`、`leaderboard/`、`scenario_runner/`，相对代码锚点不得有已提交、已暂存或未暂存差异；
 - 基线模型：`/home/shijj/interfuser/leaderboard/team_code/model_20260121.tar`；
 - 模型 SHA-256：`8feebbe02fab204e25ea19db01a05d7a3b6d109ab993b781da4fc2b1f4d3d8b8`；

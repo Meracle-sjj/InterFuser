@@ -31,6 +31,8 @@ route6 seed1 在注册路线统计后，CARLA 再次以 SIGSEGV 退出：`carla_
 
 修复将清理顺序固定为 Traffic Manager 退出同步模式、world 退出同步模式、ScenarioManager 清理、CarlaDataProvider 单次批量回收；删除完成路径的逐个 actor 销毁和 ego 重复销毁，并使同一 attempt 的 cleanup 幂等。清理顺序定向测试为 6/6 通过；带完整 CARLA、Leaderboard、Scenario Runner `PYTHONPATH` 的完整 unittest 为 152/152 通过。
 
-v2 原目录永久保留且禁止 resume、拼接或覆盖。修复提交推送后，先以新 Run ID 对 route6 seed1/2 做生命周期 smoke；只有 2/2 pipeline valid 且进程、2155/2255、GPU 6/7 全部归零，才允许从 14 个 attempt 完整重跑 seeds1/2。
+修复提交 `1d91686` 推送后，首个 smoke Run ID `b0-d7-route6-seeds1-2-cleanup-smoke-20260722-v1` 被 P0 在创建 manifest 和启动 CARLA 前拒绝：配置仍指向旧 evaluator 哈希和旧运行代码锚点。该 launcher 日志与 PID 文件保留为门禁证据，不属于驾驶 attempt。配置随后只把运行代码锚定到 `1d91686` 并更新 evaluator SHA-256；模型、agent、路线、场景和 checkpoint 契约保持不变。
+
+v2 原目录永久保留且禁止 resume、拼接或覆盖。配置提交推送后，使用另一个新 Run ID 对 route6 seed1/2 做生命周期 smoke；只有 2/2 pipeline valid 且进程、2155/2255、GPU 6/7 全部归零，才允许从 14 个 attempt 完整重跑 seeds1/2。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

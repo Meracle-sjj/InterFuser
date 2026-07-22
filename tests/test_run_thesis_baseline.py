@@ -1,6 +1,6 @@
 """
-[INPUT]: 依赖 tools.evaluation.run_thesis_baseline 的计划、路线拆分、资源门禁、结果解析和执行编排 API，并使用临时配置构造最小 P0 合法输入。
-[OUTPUT]: 提供 D7 计划、驾驶失败保留、端口门禁、延迟释放等待和 pipeline-invalid 立即终止的回归测试。
+[INPUT]: 依赖 tools.evaluation.run_thesis_baseline 的计划、路线拆分、资源门禁、隔离式 CARLA RPC、结果解析和执行编排 API，并使用临时配置构造最小 P0 合法输入。
+[OUTPUT]: 提供 D7 计划、原生 RPC 崩溃隔离、驾驶失败保留、资源释放和 pipeline-invalid 立即终止的回归测试。
 [POS]: tests 的 M0 runner 纯逻辑测试，不启动 CARLA；外部进程生命周期由真实单路线 smoke 进一步验证。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -8,14 +8,17 @@
 import hashlib
 import json
 import socket
+import subprocess
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tools.evaluation.run_thesis_baseline import (
     RunnerError,
+    _run_carla_startup_rpc,
+    _wait_for_carla,
     build_run_plan,
     ensure_ports_free,
     execute_run_plan,
@@ -251,6 +254,36 @@ class ThesisBaselineRunnerTests(unittest.TestCase):
         ), patch("tools.evaluation.runtime_resources.time.sleep"):
             with self.assertRaisesRegex(RunnerError, "2155"):
                 wait_for_ports_free([2155], timeout_seconds=0.5, poll_seconds=0.1)
+
+    def test_native_carla_rpc_abort_is_reported_without_killing_runner(self):
+        aborted = subprocess.CompletedProcess(
+            args=[],
+            returncode=-6,
+            stdout="",
+            stderr="terminate called after throwing TimeoutException\n",
+        )
+        with patch(
+            "tools.evaluation.run_thesis_baseline.subprocess.run",
+            return_value=aborted,
+        ):
+            with self.assertRaisesRegex(RunnerError, "code -6"):
+                _run_carla_startup_rpc(Path("/repo"), 2155, 2)
+
+    def test_wait_for_carla_retries_isolated_rpc_failure(self):
+        process = Mock()
+        process.poll.return_value = None
+        with patch(
+            "tools.evaluation.run_thesis_baseline._run_carla_startup_rpc",
+            side_effect=[RunnerError("native abort"), "Carla/Maps/Town04_Opt"],
+        ) as probe, patch(
+            "tools.evaluation.run_thesis_baseline.time.monotonic",
+            side_effect=[0.0, 0.0, 2.0],
+        ), patch("tools.evaluation.run_thesis_baseline.time.sleep") as sleep:
+            loaded_map = _wait_for_carla(Path("/repo"), process, 2155, 10)
+
+        self.assertEqual(loaded_map, "Carla/Maps/Town04_Opt")
+        self.assertEqual(probe.call_count, 2)
+        sleep.assert_called_once_with(2)
 
     def test_execute_plan_stops_after_first_pipeline_invalid_attempt(self):
         with tempfile.TemporaryDirectory() as root:

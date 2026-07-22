@@ -2,7 +2,7 @@
 """
 [INPUT]: 依赖通过 P0 的 baseline_eval JSON、runtime_resources 资源守卫、CARLA/Leaderboard 运行时与冻结 checkpoint。
 [OUTPUT]: 对外提供 RunnerError、build_run_plan、write_single_route_xml、parse_leaderboard_result、execute_run_plan 与 CLI，生成隔离的 route/seed 原始结果和 manifest。
-[POS]: tools/evaluation 的 M0 配置驱动 runner，位于静态预检之后、统计汇总之前；默认 dry-run，显式 --execute 才启动外部进程。
+[POS]: tools/evaluation 的 M0 配置驱动 runner，位于静态预检之后、统计汇总之前；用短命子进程隔离 CARLA 原生 RPC 故障，显式 --execute 才启动外部进程。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
@@ -45,6 +45,25 @@ from tools.evaluation.runtime_resources import (  # noqa: E402
 RUN_PLAN_SCHEMA_VERSION = 1
 RUN_MANIFEST_SCHEMA_VERSION = 1
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$")
+CARLA_MAP_MARKER = "CARLA_STARTUP_MAP="
+CARLA_STARTUP_RPC = r"""
+import sys
+from pathlib import Path
+
+repo_root = Path(sys.argv[1])
+for path in (
+    repo_root / "carla" / "PythonAPI",
+    repo_root / "carla" / "PythonAPI" / "carla",
+):
+    sys.path.insert(0, str(path))
+
+import carla
+
+client = carla.Client("127.0.0.1", int(sys.argv[2]))
+client.set_timeout(float(sys.argv[3]))
+world = client.load_world(sys.argv[4]) if len(sys.argv) == 5 else client.get_world()
+print("CARLA_STARTUP_MAP=" + world.get_map().name, flush=True)
+"""
 
 
 def _utc_now():
@@ -350,18 +369,41 @@ def _python_environment(repo_root, plan, attempt, save_path):
     return env
 
 
-def _carla_client(repo_root, port, timeout_seconds):
-    for path in (
-        repo_root / "carla" / "PythonAPI",
-        repo_root / "carla" / "PythonAPI" / "carla",
-    ):
-        if str(path) not in sys.path:
-            sys.path.insert(0, str(path))
-    import carla
-
-    client = carla.Client("127.0.0.1", int(port))
-    client.set_timeout(float(timeout_seconds))
-    return client
+def _run_carla_startup_rpc(repo_root, port, timeout_seconds, runtime_map=None):
+    """Keep CARLA native client aborts outside the long-lived runner process."""
+    command = [
+        sys.executable,
+        "-c",
+        CARLA_STARTUP_RPC,
+        str(repo_root),
+        str(port),
+        str(timeout_seconds),
+    ]
+    if runtime_map is not None:
+        command.append(str(runtime_map))
+    try:
+        result = subprocess.run(
+            command,
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=max(10.0, float(timeout_seconds) + 5.0),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RunnerError(
+            f"CARLA startup RPC exceeded {timeout_seconds} seconds"
+        ) from exc
+    if result.returncode != 0:
+        detail = result.stderr.strip().splitlines()
+        suffix = detail[-1] if detail else "no stderr"
+        raise RunnerError(
+            f"CARLA startup RPC exited with code {result.returncode}: {suffix}"
+        )
+    for line in reversed(result.stdout.splitlines()):
+        if line.startswith(CARLA_MAP_MARKER):
+            return line[len(CARLA_MAP_MARKER) :]
+    raise RunnerError("CARLA startup RPC returned no map name")
 
 
 def _wait_for_carla(repo_root, process, port, timeout_seconds):
@@ -371,8 +413,7 @@ def _wait_for_carla(repo_root, process, port, timeout_seconds):
         if process.poll() is not None:
             raise RunnerError(f"CARLA exited during startup with code {process.returncode}")
         try:
-            client = _carla_client(repo_root, port, 2)
-            return client.get_world().get_map().name
+            return _run_carla_startup_rpc(repo_root, port, 2)
         except Exception as exc:  # CARLA raises version-specific RPC exceptions.
             last_error = exc
             time.sleep(2)
@@ -475,17 +516,19 @@ def _execute_attempt(repo_root, plan, run_dir, attempt):
             start_new_session=True,
         )
         attempt_manifest["carla_pid"] = carla_process.pid
+        _write_json_atomic(attempt_manifest_path, attempt_manifest)
         _wait_for_carla(
             repo_root,
             carla_process,
             runtime["carla_port"],
             runtime["carla_start_timeout_seconds"],
         )
-        client = _carla_client(
-            repo_root, runtime["carla_port"], runtime["carla_client_timeout_seconds"]
+        attempt_manifest["runtime_map_loaded"] = _run_carla_startup_rpc(
+            repo_root,
+            runtime["carla_port"],
+            runtime["carla_client_timeout_seconds"],
+            attempt["runtime_map"],
         )
-        world = client.load_world(attempt["runtime_map"])
-        attempt_manifest["runtime_map_loaded"] = world.get_map().name
 
         save_path = attempt_dir / "sensor_data"
         save_path.mkdir()

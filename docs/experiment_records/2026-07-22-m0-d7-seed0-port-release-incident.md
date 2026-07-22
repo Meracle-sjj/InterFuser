@@ -51,4 +51,14 @@ route18 在 `2026-07-22T03:40:51.756755+00:00` 完成。下一条 route6 于约 
 
 route18 结束后其 CARLA 进程组完全消失，route6 使用新的 PID/PGID 和 evaluator 正常启动；route6 结束后 launcher 正常退出，`2155/2255` 无监听，GPU 6/7 回到运行前显存水平。该结果解除资源生命周期门禁，允许正式 D7 seed0 使用新 Run ID 重跑，但不替代 7 路线基线结果。
 
+## 7. v3 CARLA readiness 原生崩溃
+
+`b0-d7-seed0-20260722-v3` 在冻结运行 Git `634639596a9a4e6911f434e60c74224da99c9503` 上完成了前 5 条路线，总 manifest 为 `recorded=5/7`、`pipeline_valid=5`、`pipeline_invalid=0`。route39 启动 CARLA 后，2 秒 readiness RPC 在 CARLA Python 原生层抛出 `TimeoutException` 并调用 `std::terminate`，launcher 因此越过 Python `finally` 直接退出。
+
+route39 的初始 `attempt_manifest.json`、`route.xml`、`carla.log` 和空 `evaluator.log` 保留在原 Run ID 目录；evaluator 从未启动，该事故不进入模型失败或 D7 统计。孤儿 CARLA 进程组 `PGID=1893117` 经命令行、工作目录与 2155 监听三重归属确认后回收，GPU 6/7 显存回到 `81/45 MiB`。
+
+修复边界是将 readiness 和地图加载 RPC 放入短命子进程：原生崩溃只使单次探针失败，父 runner 仍能重试或进入 attempt 清理回路。同时在 CARLA 启动后立即原子落盘 PID 与命令，缩小 launcher 遭遇不可恢复信号时的证据空洞。
+
+定向 runner/资源回归为 `13/13` 通过；带完整 CARLA、Leaderboard 和 Scenario Runner `PYTHONPATH` 的 unittest 为 `149/149` 通过。v3 保持原地不续跑，因为在同一 run manifest 中混用两个 runner hash 会破坏实验 provenance；修复后的 seed0 必须使用新 Run ID 从 7 条路线重新开始。
+
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

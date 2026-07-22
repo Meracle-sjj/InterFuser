@@ -1,6 +1,6 @@
 """
-[INPUT]: 依赖 tools.data.audit_semantic_pretraining_data 的类别配置校验与数据审计 API，并使用临时 RGB/语义图构造最小 route sequence。
-[OUTPUT]: 提供 source-tag 唯一映射、像素/有效 mask 统计、帧对齐错误和 readiness 门槛的回归测试。
+[INPUT]: 依赖 tools.data.audit_semantic_pretraining_data 的类别配置、dataset_index 抽样与数据审计 API，并使用临时 RGB/语义图构造最小 sequence。
+[OUTPUT]: 提供 source-tag 映射、像素统计、索引分层抽样、帧数对账、对齐错误和 readiness 门槛的回归测试。
 [POS]: tests 的 M1 数据准入契约测试，保证统计报告能阻止类别缺失或结构损坏的数据进入 ResNet-50 预训练。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -70,8 +70,13 @@ class SemanticPretrainingAuditTests(unittest.TestCase):
         path.write_text(json.dumps(config or _config()), encoding="utf-8")
         return path
 
-    def _write_frame(self, root, write_rgb=True):
-        route = Path(root) / "route_00_Town01" / "sequence_01"
+    def _write_frame(
+        self,
+        root,
+        write_rgb=True,
+        relative_route="route_00_Town01/sequence_01",
+    ):
+        route = Path(root) / relative_route
         seg_dir = route / "seg_front"
         rgb_dir = route / "rgb_front"
         seg_dir.mkdir(parents=True)
@@ -90,6 +95,14 @@ class SemanticPretrainingAuditTests(unittest.TestCase):
             Image.fromarray(np.zeros((4, 4, 3), dtype=np.uint8)).save(
                 rgb_dir / "0000.jpg"
             )
+
+    def _write_index(self, root, entries):
+        path = Path(root) / "dataset_index.txt"
+        path.write_text(
+            "".join(f"{relative} {count}\n" for relative, count in entries),
+            encoding="utf-8",
+        )
+        return path
 
     def test_counts_grouped_pixels_and_passes_ready_gate(self):
         with tempfile.TemporaryDirectory() as root:
@@ -146,6 +159,77 @@ class SemanticPretrainingAuditTests(unittest.TestCase):
             "class traffic_light: qualified_masks=1 < 2",
             summary["readiness"]["failures"],
         )
+
+    def test_index_sampling_is_reproducible_per_town_weather(self):
+        entries = [
+            ("town01/town01_route00_w0_ClearNoon/sequence_a", 1),
+            ("town01/town01_route01_w0_ClearNoon/sequence_b", 1),
+            ("town03/town03_route00_w1_ClearSunset/sequence_c", 1),
+            ("town03/town03_route01_w1_ClearSunset/sequence_d", 1),
+        ]
+        with tempfile.TemporaryDirectory() as root:
+            config_path = self._write_config(root)
+            for relative, _ in entries:
+                self._write_frame(root, relative_route=relative)
+            index_path = self._write_index(root, entries)
+
+            first = audit_semantic_dataset(
+                root,
+                config_path=config_path,
+                cameras=("front",),
+                index_path=index_path,
+                sample_per_town_weather=1,
+                sample_seed=20260722,
+            )
+            second = audit_semantic_dataset(
+                root,
+                config_path=config_path,
+                cameras=("front",),
+                index_path=index_path,
+                sample_per_town_weather=1,
+                sample_seed=20260722,
+            )
+
+        selection = first["sequence_selection"]
+        self.assertTrue(first["valid"])
+        self.assertEqual(first["report_schema_version"], 2)
+        self.assertEqual(first["sequence_count"], 2)
+        self.assertEqual(first["towns"], ["Town01", "Town03"])
+        self.assertEqual(selection["available_sequence_count"], 4)
+        self.assertEqual(
+            selection["selected_sequences"],
+            second["sequence_selection"]["selected_sequences"],
+        )
+
+    def test_index_declared_frame_count_mismatch_is_structural_failure(self):
+        relative = "town01/town01_route00_w0_ClearNoon/sequence_a"
+        with tempfile.TemporaryDirectory() as root:
+            config_path = self._write_config(root)
+            self._write_frame(root, relative_route=relative)
+            index_path = self._write_index(root, [(relative, 2)])
+
+            summary = audit_semantic_dataset(
+                root,
+                config_path=config_path,
+                cameras=("front",),
+                index_path=index_path,
+            )
+
+        self.assertFalse(summary["valid"])
+        self.assertTrue(any("index declares 2" in item for item in summary["errors"]))
+
+    def test_sampling_requires_dataset_index(self):
+        with tempfile.TemporaryDirectory() as root:
+            config_path = self._write_config(root)
+            self._write_frame(root)
+
+            with self.assertRaisesRegex(AuditError, "requires index_path"):
+                audit_semantic_dataset(
+                    root,
+                    config_path=config_path,
+                    cameras=("front",),
+                    sample_per_town_weather=1,
+                )
 
 
 if __name__ == "__main__":

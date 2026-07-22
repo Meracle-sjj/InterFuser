@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-[INPUT]: 依赖版本化语义类别 JSON、Pillow/NumPy，以及采集 route 中按 frame ID 对齐的 rgb_{camera} 与 seg_{camera} 文件。
-[OUTPUT]: 对外提供 AuditError、load_class_config、audit_semantic_dataset 与 CLI，输出原始标签/训练类别覆盖、结构错误和 pilot readiness。
+[INPUT]: 依赖版本化语义类别 JSON、可选 dataset_index、Pillow/NumPy，以及 sequence 中按 frame ID 对齐的 rgb_{camera} 与 seg_{camera} 文件。
+[OUTPUT]: 对外提供 AuditError、load_class_config、load_dataset_index、audit_semantic_dataset 与 CLI，输出可追溯抽样、标签覆盖、结构错误和 pilot readiness。
 [POS]: tools/data 的 M1 数据准入审计器，把 CARLA 原始语义事实转换为可复现统计；它不生成标签、不修改图像，也不决定训练超参数。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -9,6 +9,7 @@
 import argparse
 import hashlib
 import json
+import random
 import re
 import sys
 from collections import Counter, defaultdict
@@ -19,11 +20,12 @@ from PIL import Image
 
 
 CONFIG_SCHEMA_VERSION = 1
-REPORT_SCHEMA_VERSION = 1
+REPORT_SCHEMA_VERSION = 2
 DEFAULT_CAMERAS = ("front", "left", "right")
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = REPO_ROOT / "configs" / "thesis" / "semantic_classes_v1.json"
-TOWN_PATTERN = re.compile(r"Town\d+(?:HD)?")
+TOWN_PATTERN = re.compile(r"Town(\d+)(?:HD)?", re.IGNORECASE)
+WEATHER_PATTERN = re.compile(r"_w(\d+)_", re.IGNORECASE)
 
 
 class AuditError(ValueError):
@@ -161,6 +163,91 @@ def load_class_config(path):
     }
 
 
+def load_dataset_index(root, index_path):
+    """Load sequence paths and declared frame counts without scanning the dataset."""
+    root = Path(root).resolve()
+    index_path = Path(index_path)
+    if not index_path.is_absolute():
+        index_path = root / index_path
+    try:
+        lines = index_path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise AuditError(f"unable to read dataset index {index_path}: {exc}") from exc
+
+    entries = []
+    seen = set()
+    for line_number, line in enumerate(lines, 1):
+        if not line.strip():
+            continue
+        try:
+            relative_text, count_text = line.rsplit(maxsplit=1)
+            declared_frames = int(count_text)
+        except (TypeError, ValueError) as exc:
+            raise AuditError(f"dataset index line {line_number} is invalid") from exc
+        relative = Path(relative_text)
+        if relative.is_absolute() or declared_frames <= 0:
+            raise AuditError(f"dataset index line {line_number} is invalid")
+        sequence = (root / relative).resolve()
+        try:
+            sequence.relative_to(root)
+        except ValueError as exc:
+            raise AuditError(
+                f"dataset index line {line_number} escapes dataset root"
+            ) from exc
+        if sequence in seen:
+            raise AuditError(f"dataset index contains duplicate sequence: {relative}")
+        if not sequence.is_dir():
+            raise AuditError(f"indexed sequence is not a directory: {relative}")
+        seen.add(sequence)
+        weather_match = WEATHER_PATTERN.search(relative.as_posix())
+        entries.append(
+            {
+                "path": sequence,
+                "relative_path": relative.as_posix(),
+                "declared_frames": declared_frames,
+                "town": _town_from_route(relative.as_posix()),
+                "weather": int(weather_match.group(1)) if weather_match else None,
+            }
+        )
+    if not entries:
+        raise AuditError(f"dataset index is empty: {index_path}")
+    return {
+        "path": index_path.resolve(),
+        "sha256": hashlib.sha256(index_path.read_bytes()).hexdigest(),
+        "entries": entries,
+    }
+
+
+def _sample_index_entries(entries, per_stratum, seed):
+    if per_stratum is None:
+        return list(entries)
+    if (
+        not isinstance(per_stratum, int)
+        or isinstance(per_stratum, bool)
+        or per_stratum <= 0
+    ):
+        raise AuditError("sample_per_town_weather must be a positive integer")
+    if not isinstance(seed, int) or isinstance(seed, bool):
+        raise AuditError("sample_seed must be an integer")
+    groups = defaultdict(list)
+    for entry in entries:
+        if entry["town"] is None or entry["weather"] is None:
+            raise AuditError(
+                "Town/weather sampling requires every indexed path to encode both values"
+            )
+        groups[(entry["town"], entry["weather"])].append(entry)
+    rng = random.Random(seed)
+    selected = []
+    for key in sorted(groups):
+        candidates = sorted(groups[key], key=lambda item: item["relative_path"])
+        count = min(per_stratum, len(candidates))
+        selected.extend(rng.sample(candidates, count))
+    return sorted(
+        selected,
+        key=lambda item: (item["town"], item["weather"], item["relative_path"]),
+    )
+
+
 def _route_dirs(root, cameras):
     routes = set()
     for camera in cameras:
@@ -183,10 +270,17 @@ def _frame_paths(directory, suffixes):
 
 def _town_from_route(route):
     match = TOWN_PATTERN.search(str(route))
-    return match.group(0) if match else None
+    return f"Town{match.group(1)}" if match else None
 
 
-def audit_semantic_dataset(root, config_path=DEFAULT_CONFIG, cameras=DEFAULT_CAMERAS):
+def audit_semantic_dataset(
+    root,
+    config_path=DEFAULT_CONFIG,
+    cameras=DEFAULT_CAMERAS,
+    index_path=None,
+    sample_per_town_weather=None,
+    sample_seed=0,
+):
     """Return deterministic coverage and readiness facts for a dataset root."""
     root = Path(root)
     if not root.is_dir():
@@ -197,10 +291,20 @@ def audit_semantic_dataset(root, config_path=DEFAULT_CONFIG, cameras=DEFAULT_CAM
     if any(not isinstance(camera, str) or not camera for camera in cameras):
         raise AuditError("camera names must be non-empty strings")
 
+    if sample_per_town_weather is not None and index_path is None:
+        raise AuditError("Town/weather sampling requires index_path")
+
     config = load_class_config(config_path)
-    routes = _route_dirs(root, cameras)
+    index = load_dataset_index(root, index_path) if index_path is not None else None
+    indexed_entries = (
+        _sample_index_entries(index["entries"], sample_per_town_weather, sample_seed)
+        if index
+        else []
+    )
+    routes = [item["path"] for item in indexed_entries] if index else _route_dirs(root, cameras)
     if not routes:
         raise AuditError(f"no seg_<camera> directories found under {root}")
+    indexed_by_path = {item["path"]: item for item in indexed_entries}
 
     raw_pixels = Counter()
     raw_masks = Counter()
@@ -215,7 +319,12 @@ def audit_semantic_dataset(root, config_path=DEFAULT_CONFIG, cameras=DEFAULT_CAM
     known_tags = set(config["source_labels"])
 
     for route in routes:
-        route_key = str(route.relative_to(root))
+        indexed_entry = indexed_by_path.get(route)
+        route_key = (
+            indexed_entry["relative_path"]
+            if indexed_entry
+            else str(route.relative_to(root))
+        )
         town = _town_from_route(route_key)
         if town is None:
             errors.append(f"{route_key}: unable to infer Town from route path")
@@ -290,7 +399,16 @@ def audit_semantic_dataset(root, config_path=DEFAULT_CONFIG, cameras=DEFAULT_CAM
                     errors.append(
                         f"{route_key}: seg_{camera} frame IDs differ from seg_{cameras[0]}"
                     )
-            logical_frames += len(set().union(*route_frame_sets))
+            route_logical_frames = len(set().union(*route_frame_sets))
+            logical_frames += route_logical_frames
+            if (
+                indexed_entry
+                and route_logical_frames != indexed_entry["declared_frames"]
+            ):
+                errors.append(
+                    f"{route_key}: index declares {indexed_entry['declared_frames']} "
+                    f"frames but audit found {route_logical_frames}"
+                )
         for train_id in route_qualified:
             class_sequences[train_id].add(route_key)
 
@@ -367,6 +485,23 @@ def audit_semantic_dataset(root, config_path=DEFAULT_CONFIG, cameras=DEFAULT_CAM
         "class_config": str(config["path"]),
         "class_config_sha256": config["sha256"],
         "cameras": list(cameras),
+        "sequence_selection": {
+            "source": "dataset_index" if index else "filesystem_discovery",
+            "dataset_index": str(index["path"]) if index else None,
+            "dataset_index_sha256": index["sha256"] if index else None,
+            "available_sequence_count": len(index["entries"]) if index else len(routes),
+            "sample_per_town_weather": sample_per_town_weather,
+            "sample_seed": sample_seed if sample_per_town_weather is not None else None,
+            "selected_sequences": [
+                {
+                    "path": item["relative_path"],
+                    "declared_frames": item["declared_frames"],
+                    "town": item["town"],
+                    "weather": item["weather"],
+                }
+                for item in indexed_entries
+            ],
+        },
         "sequence_count": len(routes),
         "towns": sorted(towns),
         "logical_frame_count": logical_frames,
@@ -392,12 +527,25 @@ def _parse_cameras(value):
     return cameras
 
 
+def _positive_int_arg(value):
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("value must be a positive integer") from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("value must be a positive integer")
+    return parsed
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Audit CARLA semantic data for traffic-domain pretraining"
     )
     parser.add_argument("dataset_root", type=Path)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument("--dataset-index", type=Path)
+    parser.add_argument("--sample-per-town-weather", type=_positive_int_arg)
+    parser.add_argument("--sample-seed", type=int, default=0)
     parser.add_argument(
         "--cameras", type=_parse_cameras, default=DEFAULT_CAMERAS, metavar="LIST"
     )
@@ -407,7 +555,12 @@ def main(argv=None):
 
     try:
         summary = audit_semantic_dataset(
-            args.dataset_root, config_path=args.config, cameras=args.cameras
+            args.dataset_root,
+            config_path=args.config,
+            cameras=args.cameras,
+            index_path=args.dataset_index,
+            sample_per_town_weather=args.sample_per_town_weather,
+            sample_seed=args.sample_seed,
         )
     except AuditError as exc:
         print(f"audit error: {exc}", file=sys.stderr)

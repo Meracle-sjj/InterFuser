@@ -5,7 +5,7 @@
 
 CLAUDE.md: 数据工具模块地图，维护采集、标签、审计、复核和导出的单向数据流。
 apply_painted_line_reviews.py: 将显式人工复核 manifest 应用到 evidence schema，只改变可见实体标线状态。
-audit_semantic_pretraining_data.py: 扫描 RGB/语义帧对，按版本化类别配置统计覆盖并判定 M1 pilot readiness。
+audit_semantic_pretraining_data.py: 从文件系统或 dataset_index 可复现抽样 RGB/语义帧对，统计类别覆盖、结构完整性并判定 M1 pilot readiness。
 audit_traffic_element_labels.py: 校验 traffic-element schema v2 的结构、来源和路线停止目标覆盖。
 audit_traffic_element_views.py: 校验 evidence schema v3 的 RGB、深度、语义、LiDAR 对齐和可见性证据。
 batch_merge_data.py: 将多相机图像与测量/演员信息合并为旧训练加载器消费的完整样本。

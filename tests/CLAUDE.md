@@ -5,7 +5,7 @@
 
 CLAUDE.md: 回归测试模块地图，确保标签来源、投影、采集、审计与运行兼容性可独立验证。
 test_apply_painted_line_reviews.py: 验证人工 painted-line 决策的路径约束、状态迁移和原子写入。
-test_audit_semantic_pretraining_data.py: 验证语义类别映射、RGB/mask 对齐统计和 pilot readiness 失败原因。
+test_audit_semantic_pretraining_data.py: 验证语义类别映射、dataset_index 分层抽样、RGB/mask 对齐统计和 pilot readiness 失败原因。
 test_audit_traffic_element_labels.py: 验证 schema v2 审计对合法记录、禁用字段和来源错误的处理。
 test_audit_traffic_element_views.py: 验证 schema v3 的相机、LiDAR、投影、可见性和帧对齐审计。
 test_background_traffic_health.py: 验证背景交通健康度统计在 CARLA 参与者与道路投影上的行为。

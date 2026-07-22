@@ -91,7 +91,7 @@ class ThesisBaselinePreflightTests(unittest.TestCase):
                 "available_route_towns": ["Town01"],
                 "unavailable_route_towns": ["Town06"],
             },
-            "background_vehicles_by_route": {"0": 10},
+            "background_vehicles_by_town": {"Town01": 10},
             "random_seeds": [0, 1, 2],
             "result_root": "results/thesis_m0",
         }

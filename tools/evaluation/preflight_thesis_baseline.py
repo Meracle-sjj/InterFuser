@@ -319,16 +319,16 @@ def preflight_baseline(config_path=DEFAULT_CONFIG, repo_root=REPO_ROOT, check_gi
         if scenario_events[town] <= 0:
             errors.append(f"scenario file has no events for route town {town}")
 
-    background = config.get("background_vehicles_by_route")
+    background = config.get("background_vehicles_by_town")
     if not isinstance(background, dict):
-        errors.append("background_vehicles_by_route must be an object")
+        errors.append("background_vehicles_by_town must be an object")
     else:
-        missing_background = [
-            route_id for route_id in development if str(route_id) not in background
-        ]
+        missing_background = sorted(
+            {routes[route_id] for route_id in development if routes.get(route_id) not in background}
+        )
         if missing_background:
             errors.append(
-                f"development routes missing background counts: {missing_background}"
+                f"development route towns missing background counts: {missing_background}"
             )
 
     seeds = config.get("random_seeds")

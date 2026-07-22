@@ -102,6 +102,8 @@ M0 只有满足以下条件才能从 `CALIBRATING` 改为 `FROZEN`：
 5. 已决定 A36 是否足以作为论文主集，并在正文中如实描述 Town06 缺失；
 6. 基线结果不再依赖 `results/` 内未版本化脚本解释关键参数。
 
-P0 由 `tools/evaluation/preflight_thesis_baseline.py` 实现。当前下一步是先保存一份通过的 P0 报告，再实现受配置驱动的 D7 runner；不是立即重跑 36 条路线。
+P0 由 `tools/evaluation/preflight_thesis_baseline.py` 实现，D7 runner 由 `tools/evaluation/run_thesis_baseline.py` 实现。runner 默认只生成计划；只有显式传入 `--execute` 才启动 CARLA。配置分别记录 agent CUDA 设备和 CARLA graphics adapter，命令行覆盖必须写入 run manifest。
+
+当前下一步是先对完整 D7 生成 dry-run 计划，再用 route 18 / seed 0 验证一条真实场景链路；单路线有效后才允许扩展到 D7 单种子，不立即重跑 36 条路线。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

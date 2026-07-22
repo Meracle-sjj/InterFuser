@@ -8,9 +8,15 @@
     "python": "3.10.19",
     "carla": "0.9.16",
     "leaderboard": "1.0",
-    "gpu": 4,
+    "agent_cuda_visible_device": 6,
+    "carla_graphics_adapter": 7,
     "carla_port": 2155,
-    "traffic_manager_port": 2255
+    "traffic_manager_port": 2255,
+    "carla_start_timeout_seconds": 180,
+    "carla_client_timeout_seconds": 120,
+    "external_route_timeout_seconds": 5400,
+    "carla_provider_seed_offset": 2000,
+    "gpu_busy_memory_threshold_mb": 1024
   },
   "checkpoint": {
     "path": "/home/shijj/interfuser/leaderboard/team_code/model_20260121.tar",
@@ -76,14 +82,12 @@
     "allow_opt_runtime_equivalent": true
   },
   "result_root": "results/thesis_m0",
-  "background_vehicles_by_route": {
-    "0": 120,
-    "6": 100,
-    "12": 120,
-    "18": 200,
-    "30": 120,
-    "36": 120,
-    "39": 200
+  "background_vehicles_by_town": {
+    "Town01": 120,
+    "Town02": 100,
+    "Town03": 120,
+    "Town04": 200,
+    "Town05": 120
   },
   "random_seeds": [0, 1, 2],
   "environment": {

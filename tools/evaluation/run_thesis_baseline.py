@@ -278,7 +278,7 @@ def parse_leaderboard_result(path):
         name: len(values) if isinstance(values, list) else None
         for name, values in sorted(infractions.items())
     }
-    return {
+    parsed = {
         "valid": True,
         "status": record.get("status"),
         "route_id": record.get("route_id"),
@@ -288,6 +288,23 @@ def parse_leaderboard_result(path):
         "entry_status": data.get("entry_status"),
         "eligible": data.get("eligible"),
     }
+    status = str(parsed["status"] or "")
+    setup_failure_markers = (
+        "couldn't be set up",
+        "could not be set up",
+        "agent crashed",
+        "simulation crashed",
+    )
+    duration_game = parsed["meta"].get("duration_game")
+    invalid_reasons = []
+    if any(marker in status.lower() for marker in setup_failure_markers):
+        invalid_reasons.append(f"infrastructure status: {status}")
+    if not isinstance(duration_game, (int, float)) or duration_game <= 0:
+        invalid_reasons.append("route has no positive game duration")
+    if invalid_reasons:
+        parsed["valid"] = False
+        parsed["error"] = "; ".join(invalid_reasons)
+    return parsed
 
 
 def _port_is_open(port):
@@ -409,7 +426,7 @@ def _python_environment(repo_root, plan, attempt, save_path):
 
 def _stop_process_group(process, grace_seconds=20):
     if process is None or process.poll() is not None:
-        return
+        return None if process is None else process.returncode
     try:
         os.killpg(process.pid, signal.SIGTERM)
         process.wait(timeout=grace_seconds)
@@ -420,6 +437,7 @@ def _stop_process_group(process, grace_seconds=20):
             except ProcessLookupError:
                 pass
             process.wait(timeout=10)
+    return process.returncode
 
 
 def _carla_client(repo_root, port, timeout_seconds):
@@ -496,6 +514,7 @@ def _execute_attempt(repo_root, plan, run_dir, attempt):
         "host": socket.gethostname(),
         "carla_command": None,
         "carla_pid": None,
+        "carla_exit_code": None,
         "evaluator_pid": None,
         "duration_seconds": None,
         "gpu_memory_before_mb": None,
@@ -558,6 +577,7 @@ def _execute_attempt(repo_root, plan, run_dir, attempt):
         save_path = attempt_dir / "sensor_data"
         save_path.mkdir()
         env = _python_environment(repo_root, plan, attempt, save_path)
+        env["ROUTES"] = str(route_path)
         command = _evaluator_command(repo_root, plan, attempt, route_path, result_path)
         attempt_manifest["evaluator_command"] = command
         _write_json_atomic(attempt_manifest_path, attempt_manifest)
@@ -593,7 +613,7 @@ def _execute_attempt(repo_root, plan, run_dir, attempt):
         attempt_manifest["error"] = f"{type(exc).__name__}: {exc}"
     finally:
         _stop_process_group(evaluator_process, grace_seconds=10)
-        _stop_process_group(carla_process)
+        attempt_manifest["carla_exit_code"] = _stop_process_group(carla_process)
         evaluator_log.close()
         carla_log.close()
         attempt_manifest["finished_at"] = _utc_now()

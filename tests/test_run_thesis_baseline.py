@@ -169,7 +169,7 @@ class ThesisBaselineRunnerTests(unittest.TestCase):
                             "score_penalty": 0.5,
                         },
                         "infractions": {"vehicle_blocked": ["blocked"]},
-                        "meta": {"route_length": 100.0},
+                        "meta": {"route_length": 100.0, "duration_game": 10.0},
                     }
                 ]
             },
@@ -186,6 +186,34 @@ class ThesisBaselineRunnerTests(unittest.TestCase):
         self.assertEqual(parsed["status"], "Failed - Agent got blocked")
         self.assertEqual(parsed["scores"]["score_composed"], 10.0)
         self.assertEqual(parsed["infraction_counts"]["vehicle_blocked"], 1)
+
+    def test_parser_rejects_agent_setup_failure_even_with_scores(self):
+        record = {
+            "_checkpoint": {
+                "records": [
+                    {
+                        "route_id": "RouteScenario_0",
+                        "status": "Failed - Agent couldn't be set up",
+                        "scores": {
+                            "score_composed": 0.0,
+                            "score_route": 0.0,
+                            "score_penalty": 1.0,
+                        },
+                        "infractions": {},
+                        "meta": {"route_length": 100.0, "duration_game": 0.0},
+                    }
+                ]
+            }
+        }
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "result.json"
+            path.write_text(json.dumps(record), encoding="utf-8")
+
+            parsed = parse_leaderboard_result(path)
+
+        self.assertFalse(parsed["valid"])
+        self.assertIn("couldn't be set up", parsed["error"])
+        self.assertIn("no positive game duration", parsed["error"])
 
     def test_port_gate_rejects_listener(self):
         listener = socket.socket()

@@ -23,6 +23,6 @@ test_run_thesis_baseline.py: 验证 D7 runner 的路线拆分、CARLA 原生 RPC
 test_traffic_element_collector.py: 验证采集器建立并保存多传感器、交通标签和测量目录。
 test_traffic_element_labels.py: 验证 schema v2 标签、坐标变换、旧 affordance 合并和记录校验。
 test_traffic_element_projection.py: 验证世界/传感器投影、深度解码、证据关联与标线候选。
-test_traffic_manager_compat.py: 验证 CARLA 0.9.16 Traffic Manager API 与 `_Opt` 地图名称兼容层。
+test_traffic_manager_compat.py: 验证 CARLA 0.9.16 Traffic Manager API、`_Opt` 地图名称兼容层，以及同步退出先于 actor 回收的幂等清理顺序。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

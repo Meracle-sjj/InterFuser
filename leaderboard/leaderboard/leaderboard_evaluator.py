@@ -6,9 +6,10 @@
 # For a copy, see <https://opensource.org/licenses/MIT>.
 
 """
-CARLA Challenge Evaluator Routes
-
-Provisional code to evaluate Autonomous Agents for the CARLA Autonomous Driving challenge
+[INPUT]: 依赖 CARLA client、Scenario Runner 数据提供器与 Leaderboard 路线/统计组件，消费单次路线评测参数和 agent 配置。
+[OUTPUT]: 对外提供 LeaderboardEvaluator 与 CLI，在同步仿真中执行路线、落盘统计，并按 Traffic Manager -> world -> actor 的顺序回收运行时资源。
+[POS]: leaderboard/leaderboard 的闭环评测入口，由 thesis baseline runner 以短命进程调用；清理边界必须幂等，禁止把 CARLA 生命周期失败混入模型成绩。
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 from __future__ import print_function
 
@@ -97,6 +98,7 @@ class LeaderboardEvaluator(object):
         self.statistics_manager = statistics_manager
         self.sensors = None
         self.sensor_icons = []
+        self._cleanup_complete = True
         self._vehicle_lights = carla.VehicleLightState.Position | carla.VehicleLightState.LowBeam
 
         # First of all, we need to create the client that will send the requests
@@ -155,25 +157,22 @@ class LeaderboardEvaluator(object):
         Remove and destroy all actors
         """
 
-        # Simulation still running and in synchronous mode?
-        if hasattr(self, 'manager') and self.manager and self.manager.get_running_status() \
-                and hasattr(self, 'world') and self.world:
-            # Reset to asynchronous mode
+        if getattr(self, '_cleanup_complete', False):
+            return
+
+        # CARLA 0.9.16 requires Traffic Manager to leave synchronous mode
+        # before its tracked actors are destroyed.
+        if hasattr(self, 'world') and self.world:
+            self.traffic_manager.set_synchronous_mode(False)
             settings = self.world.get_settings()
             settings.synchronous_mode = False
             settings.fixed_delta_seconds = None
             self.world.apply_settings(settings)
-            self.traffic_manager.set_synchronous_mode(False)
 
         if hasattr(self, 'manager') and self.manager:
             self.manager.cleanup()
 
         CarlaDataProvider.cleanup()
-
-        for i, _ in enumerate(self.ego_vehicles):
-            if self.ego_vehicles[i]:
-                self.ego_vehicles[i].destroy()
-                self.ego_vehicles[i] = None
         self.ego_vehicles = []
 
         if self._agent_watchdog._timer:
@@ -185,6 +184,8 @@ class LeaderboardEvaluator(object):
 
         if hasattr(self, 'statistics_manager') and self.statistics_manager:
             self.statistics_manager.scenario = None
+
+        self._cleanup_complete = True
 
     def _prepare_ego_vehicles(self, ego_vehicles, wait_for_ego_vehicles=False):
         """
@@ -322,6 +323,7 @@ class LeaderboardEvaluator(object):
         """
         crash_message = ""
         entry_status = "Started"
+        self._cleanup_complete = False
 
         print("\n\033[1m========= Preparing {} (repetition {}) =========".format(config.name, config.repetition_index))
         print("> Setting up the agent\033[0m")
@@ -442,9 +444,6 @@ class LeaderboardEvaluator(object):
 
             if args.record:
                 self.client.stop_recorder()
-
-            # Remove all actors
-            scenario.remove_all_actors()
 
             self._cleanup()
 

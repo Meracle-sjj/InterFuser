@@ -40,4 +40,15 @@ route18 在 `2026-07-22T03:40:51.756755+00:00` 完成。下一条 route6 于约 
 
 回归测试使用真实独立 session 构造“leader 退出、child 忽略 SIGTERM”的故障并证明整个进程组最终消失；完整测试集为 `144/144` 通过。下一次必须先完成 route18→route6 双路线生命周期 smoke，再使用新 Run ID 从 7 条 D7 路线完整重跑。只有 `7/7` pipeline valid 才允许进入 seed1/2。
 
+## 6. 生命周期 smoke 准入结果
+
+`b0-d7-lifecycle-smoke-20260722` 在提交 `cffcca0` 上按 route18→route6 顺序执行完成，汇总为 `2/2 pipeline valid`、`0 pipeline invalid`：
+
+| Attempt | Leaderboard 状态 | DS | RC | IS | 端口释放等待 | GPU 释放等待 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `route_18_seed_0` | `Failed - Agent deviated from the route` | 1.242318 | 3.003681% | 0.413599 | 0.0 s | 0.118 s |
+| `route_06_seed_0` | `Completed` | 70.000000 | 100.000000% | 0.700000 | 0.0 s | 0.242 s |
+
+route18 结束后其 CARLA 进程组完全消失，route6 使用新的 PID/PGID 和 evaluator 正常启动；route6 结束后 launcher 正常退出，`2155/2255` 无监听，GPU 6/7 回到运行前显存水平。该结果解除资源生命周期门禁，允许正式 D7 seed0 使用新 Run ID 重跑，但不替代 7 路线基线结果。
+
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

@@ -1,3 +1,10 @@
+"""
+[INPUT]: 依赖 tools.data.audit_traffic_element_views 的公开审计 API，并使用临时目录构造 schema v2/v3 多传感器证据。
+[OUTPUT]: 提供 evidence v3 结构、帧对齐、可见性、投影、LiDAR 与人工复核状态的回归测试。
+[POS]: tests 的 schema v3 审计契约测试，阻止采集数据校验规则在重构中静默放宽或改变。
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+"""
+
 import copy
 import json
 import tempfile

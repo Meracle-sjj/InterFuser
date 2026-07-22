@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "status": "pilot",
+  "protocol_document": "docs/traffic_pretraining_dataset_v1.md",
+  "carla_version": "0.9.16",
+  "source_encoding": "uint8_city_object_label",
+  "ignore_source_tags": [255],
+  "source_labels": {
+    "0": "NONE",
+    "1": "Roads",
+    "2": "Sidewalks",
+    "3": "Buildings",
+    "4": "Walls",
+    "5": "Fences",
+    "6": "Poles",
+    "7": "TrafficLight",
+    "8": "TrafficSigns",
+    "9": "Vegetation",
+    "10": "Terrain",
+    "11": "Sky",
+    "12": "Pedestrians",
+    "13": "Rider",
+    "14": "Car",
+    "15": "Truck",
+    "16": "Bus",
+    "17": "Train",
+    "18": "Motorcycle",
+    "19": "Bicycle",
+    "20": "Static",
+    "21": "Dynamic",
+    "22": "Other",
+    "23": "Water",
+    "24": "RoadLines",
+    "25": "Ground",
+    "26": "Bridge",
+    "27": "RailTrack",
+    "28": "GuardRail",
+    "255": "Any"
+  },
+  "dataset_readiness": {
+    "minimum_sequences": 6,
+    "minimum_towns": 3,
+    "minimum_logical_frames": 2000
+  },
+  "classes": [
+    {
+      "train_id": 0,
+      "name": "background",
+      "source_tags": [0, 3, 6, 9, 10, 11, 20, 21, 22, 23, 25, 26, 27],
+      "minimum_pixels_per_mask": 1,
+      "minimum_qualified_masks": 0,
+      "minimum_sequences": 0
+    },
+    {
+      "train_id": 1,
+      "name": "road",
+      "source_tags": [1],
+      "minimum_pixels_per_mask": 100,
+      "minimum_qualified_masks": 1000,
+      "minimum_sequences": 3
+    },
+    {
+      "train_id": 2,
+      "name": "sidewalk",
+      "source_tags": [2],
+      "minimum_pixels_per_mask": 100,
+      "minimum_qualified_masks": 500,
+      "minimum_sequences": 3
+    },
+    {
+      "train_id": 3,
+      "name": "road_line",
+      "source_tags": [24],
+      "minimum_pixels_per_mask": 20,
+      "minimum_qualified_masks": 500,
+      "minimum_sequences": 3
+    },
+    {
+      "train_id": 4,
+      "name": "vehicle",
+      "source_tags": [14, 15, 16, 17],
+      "minimum_pixels_per_mask": 25,
+      "minimum_qualified_masks": 500,
+      "minimum_sequences": 3
+    },
+    {
+      "train_id": 5,
+      "name": "pedestrian",
+      "source_tags": [12],
+      "minimum_pixels_per_mask": 10,
+      "minimum_qualified_masks": 200,
+      "minimum_sequences": 3
+    },
+    {
+      "train_id": 6,
+      "name": "rider",
+      "source_tags": [13, 18, 19],
+      "minimum_pixels_per_mask": 10,
+      "minimum_qualified_masks": 100,
+      "minimum_sequences": 3
+    },
+    {
+      "train_id": 7,
+      "name": "traffic_light",
+      "source_tags": [7],
+      "minimum_pixels_per_mask": 3,
+      "minimum_qualified_masks": 200,
+      "minimum_sequences": 3
+    },
+    {
+      "train_id": 8,
+      "name": "traffic_sign",
+      "source_tags": [8],
+      "minimum_pixels_per_mask": 3,
+      "minimum_qualified_masks": 100,
+      "minimum_sequences": 3
+    },
+    {
+      "train_id": 9,
+      "name": "barrier",
+      "source_tags": [4, 5, 28],
+      "minimum_pixels_per_mask": 50,
+      "minimum_qualified_masks": 200,
+      "minimum_sequences": 3
+    }
+  ]
+}

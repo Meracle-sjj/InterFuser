@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Validate and summarize traffic-element evidence schema v3 records."""
+"""
+[INPUT]: 依赖 traffic_element_labels 的 schema v2 版本、traffic_element_projection 的 evidence v3 常量，以及采集目录中的多传感器 JSON/图像/点云文件。
+[OUTPUT]: 对外提供 AuditError、audit_traffic_element_views 与 CLI，报告帧对齐、投影、可见性、painted-line 和 LiDAR 证据完整性。
+[POS]: tools/data 的 evidence v3 审计器，位于采集器之后、人工复核和训练数据消费之前，不修改任何源数据。
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+"""
 
 import argparse
 import json

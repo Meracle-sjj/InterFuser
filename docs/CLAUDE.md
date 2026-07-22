@@ -5,6 +5,8 @@
 
 CLAUDE.md: 文档模块地图，规定论文目标与数据 schema 的依赖方向和阅读顺序。
 thesis_goal_v1.md: 毕业论文研究目标基线 v1.0，冻结研究假设、两项创新边界、消融矩阵、评价证据与任务准入规则。
+baseline_evaluation_protocol_v1.md: M0 基线评测校准协议，定义 P0、D7、A36、F42 四层集合和正式冻结门槛。
+traffic_pretraining_dataset_v1.md: M1 交通语义数据规范，约束类别映射、采样结构、sequence 级划分和预训练准入门槛。
 traffic_element_label_schema.md: 路线关联交通灯、虚拟停止边界及其 CARLA/Leaderboard 几何来源的 schema v2 契约。
 traffic_element_image_label_schema.md: 将 schema v2 目标与 RGB、语义、深度和 LiDAR 证据对齐的 schema v3 契约。
 

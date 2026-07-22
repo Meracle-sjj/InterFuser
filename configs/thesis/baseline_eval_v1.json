@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "status": "calibrating",
+  "protocol_document": "docs/baseline_evaluation_protocol_v1.md",
+  "code_anchor": "138577f823e5e061645b265f7f44cc3ee9ad95ef",
+  "runtime_code_roots": ["interfuser", "leaderboard", "scenario_runner"],
+  "runtime": {
+    "python": "3.10.19",
+    "carla": "0.9.16",
+    "leaderboard": "1.0",
+    "gpu": 4,
+    "carla_port": 2155,
+    "traffic_manager_port": 2255
+  },
+  "checkpoint": {
+    "path": "/home/shijj/interfuser/leaderboard/team_code/model_20260121.tar",
+    "sha256": "8feebbe02fab204e25ea19db01a05d7a3b6d109ab993b781da4fc2b1f4d3d8b8",
+    "architecture": "interfuser_baseline",
+    "epoch": 26,
+    "train_towns": [1, 4, 5],
+    "validation_towns": [3]
+  },
+  "inputs": {
+    "routes": {
+      "path": "leaderboard/data/42routes/42routes.xml",
+      "sha256": "355e915922e40d722213e8dd89d2fdd409d86f8225a184a00e2879a55325697b"
+    },
+    "scenarios": {
+      "path": "leaderboard/data/42routes/42scenarios.json",
+      "sha256": "46b566b1dadd7de2f632c375fdb1c68c5682a8b437c44f1991328e267d6c0722"
+    },
+    "agent": {
+      "path": "leaderboard/team_code/interfuser_agent.py",
+      "sha256": "daa486d5197a1fc7fd290ae87e675500ae928c3110cf57ea2643e80158d3eaca"
+    },
+    "agent_config": {
+      "path": "leaderboard/team_code/interfuser_config.py",
+      "sha256": "4f4be834360810fcbd06eee5ded94ed15a85ca86a17bab760bf8d4a6ef6ad526"
+    },
+    "controller": {
+      "path": "leaderboard/team_code/interfuser_controller.py",
+      "sha256": "cf3292b7101ddeefa46775b066aadea344f564f25b40edf1901bf25bee61eef7"
+    },
+    "model_definition": {
+      "path": "interfuser/timm/models/interfuser.py",
+      "sha256": "4f62c726147ee51c198e88195e1ec7048e711e9124f2d1e42f936b7a96049c4f"
+    },
+    "leaderboard_evaluator": {
+      "path": "leaderboard/leaderboard/leaderboard_evaluator.py",
+      "sha256": "a823d80d9d68d853eae83ed5dc3efb1f887a12d4e6feb902437c50f3806cf605"
+    },
+    "leaderboard_route_scenario": {
+      "path": "leaderboard/leaderboard/scenarios/route_scenario.py",
+      "sha256": "cc76d3f15ef10725a29607dab8f38b3aca17c266f540428c6c84c1fa7a321635"
+    },
+    "scenario_runner_route_scenario": {
+      "path": "scenario_runner/srunner/scenarios/route_scenario.py",
+      "sha256": "f71788798a98114d8ed5c11d53b6470900f503b71dc536eddba5d87b9f7438b4"
+    }
+  },
+  "route_sets": {
+    "development_d7": [0, 6, 12, 18, 30, 36, 39],
+    "primary_a36": [
+      0, 1, 2, 3, 4, 5,
+      6, 7, 8, 9, 10, 11,
+      12, 13, 14, 15, 16, 17,
+      18, 19, 20, 21, 22, 23,
+      30, 31, 32, 33, 34, 35,
+      36, 37, 38, 39, 40, 41
+    ],
+    "excluded_until_map_install": [24, 25, 26, 27, 28, 29]
+  },
+  "map_policy": {
+    "available_route_towns": ["Town01", "Town02", "Town03", "Town04", "Town05"],
+    "unavailable_route_towns": ["Town06"],
+    "allow_opt_runtime_equivalent": true
+  },
+  "result_root": "results/thesis_m0",
+  "background_vehicles_by_route": {
+    "0": 120,
+    "6": 100,
+    "12": 120,
+    "18": 200,
+    "30": 120,
+    "36": 120,
+    "39": 200
+  },
+  "random_seeds": [0, 1, 2],
+  "environment": {
+    "INTERFUSER_REUSE_CURRENT_WORLD": "1",
+    "INTERFUSER_BG_WARMUP_TICKS": "40",
+    "INTERFUSER_LANE_CENTER_STEER_GAIN": "0.5",
+    "PYTHONOPTIMIZE": "1"
+  },
+  "aggregation": {
+    "seed_reduction": "mean_per_route",
+    "route_reduction": "macro_mean",
+    "missing_result_policy": "retain_as_process_error_and_never_silently_drop"
+  }
+}

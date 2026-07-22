@@ -1,6 +1,6 @@
 """
-[INPUT]: 依赖 tools.evaluation.run_thesis_baseline 的计划、路线拆分、端口门禁和 Leaderboard 结果解析 API，并使用临时配置构造最小 P0 合法输入。
-[OUTPUT]: 提供 D7 route/seed 选择、GPU 覆盖留痕、单路线 XML、驾驶失败保留和端口占用拒绝的回归测试。
+[INPUT]: 依赖 tools.evaluation.run_thesis_baseline 的计划、路线拆分、端口门禁、端口释放等待和 Leaderboard 结果解析 API，并使用临时配置构造最小 P0 合法输入。
+[OUTPUT]: 提供 D7 route/seed 选择、GPU 覆盖留痕、单路线 XML、驾驶失败保留、端口占用拒绝及延迟释放等待的回归测试。
 [POS]: tests 的 M0 runner 纯逻辑测试，不启动 CARLA；外部进程生命周期由真实单路线 smoke 进一步验证。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -12,12 +12,14 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from unittest.mock import patch
 
 from tools.evaluation.run_thesis_baseline import (
     RunnerError,
     build_run_plan,
     ensure_ports_free,
     parse_leaderboard_result,
+    wait_for_ports_free,
     write_single_route_xml,
 )
 
@@ -225,6 +227,29 @@ class ThesisBaselineRunnerTests(unittest.TestCase):
                 ensure_ports_free([port])
         finally:
             listener.close()
+
+    def test_port_release_waits_for_listener_shutdown(self):
+        with patch(
+            "tools.evaluation.run_thesis_baseline._port_is_open",
+            side_effect=[True, True, False],
+        ), patch(
+            "tools.evaluation.run_thesis_baseline.time.monotonic",
+            side_effect=[0.0, 0.0, 0.1, 0.2],
+        ), patch("tools.evaluation.run_thesis_baseline.time.sleep") as sleep:
+            elapsed = wait_for_ports_free([2155], timeout_seconds=1, poll_seconds=0.1)
+
+        self.assertEqual(elapsed, 0.2)
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_port_release_times_out_while_listener_remains_open(self):
+        with patch(
+            "tools.evaluation.run_thesis_baseline._port_is_open", return_value=True
+        ), patch(
+            "tools.evaluation.run_thesis_baseline.time.monotonic",
+            side_effect=[0.0, 0.0, 1.0],
+        ), patch("tools.evaluation.run_thesis_baseline.time.sleep"):
+            with self.assertRaisesRegex(RunnerError, "2155"):
+                wait_for_ports_free([2155], timeout_seconds=0.5, poll_seconds=0.1)
 
 
 if __name__ == "__main__":

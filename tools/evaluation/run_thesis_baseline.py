@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 [INPUT]: 依赖通过 P0 的 baseline_eval JSON、CARLA/Leaderboard 运行时、冻结 checkpoint，以及空闲端口和 GPU。
-[OUTPUT]: 对外提供 RunnerError、build_run_plan、write_single_route_xml、parse_leaderboard_result、execute_run_plan 与 CLI，生成隔离的 route/seed 原始结果和 manifest。
+[OUTPUT]: 对外提供 RunnerError、build_run_plan、write_single_route_xml、parse_leaderboard_result、wait_for_ports_free、execute_run_plan 与 CLI，生成隔离的 route/seed 原始结果和 manifest。
 [POS]: tools/evaluation 的 M0 配置驱动 runner，位于静态预检之后、统计汇总之前；默认 dry-run，显式 --execute 才启动外部进程。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -38,6 +38,8 @@ from tools.evaluation.preflight_thesis_baseline import (  # noqa: E402
 RUN_PLAN_SCHEMA_VERSION = 1
 RUN_MANIFEST_SCHEMA_VERSION = 1
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$")
+PORT_RELEASE_TIMEOUT_SECONDS = 60
+PORT_RELEASE_POLL_SECONDS = 0.5
 
 
 class RunnerError(RuntimeError):
@@ -321,6 +323,25 @@ def ensure_ports_free(ports):
         raise RunnerError(f"required ports are already in use: {occupied}")
 
 
+def wait_for_ports_free(
+    ports,
+    timeout_seconds=PORT_RELEASE_TIMEOUT_SECONDS,
+    poll_seconds=PORT_RELEASE_POLL_SECONDS,
+):
+    """Wait for a runner-owned CARLA process to finish releasing its sockets."""
+    ports = [int(port) for port in ports]
+    started = time.monotonic()
+    deadline = started + max(0.0, float(timeout_seconds))
+    while True:
+        occupied = [port for port in ports if _port_is_open(port)]
+        if not occupied:
+            return round(time.monotonic() - started, 3)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RunnerError(f"ports did not become free after shutdown: {occupied}")
+        time.sleep(min(float(poll_seconds), remaining))
+
+
 def _gpu_memory_usage():
     result = subprocess.run(
         [
@@ -520,6 +541,8 @@ def _execute_attempt(repo_root, plan, run_dir, attempt):
         "gpu_memory_before_mb": None,
         "gpu_peak_memory_mb": None,
         "gpu_monitor_error": None,
+        "port_release_wait_seconds": None,
+        "cleanup_error": None,
         "error": None,
         "leaderboard_result": None,
         "evaluator_command": None,
@@ -614,6 +637,14 @@ def _execute_attempt(repo_root, plan, run_dir, attempt):
     finally:
         _stop_process_group(evaluator_process, grace_seconds=10)
         attempt_manifest["carla_exit_code"] = _stop_process_group(carla_process)
+        if carla_process is not None:
+            try:
+                attempt_manifest["port_release_wait_seconds"] = wait_for_ports_free(
+                    [runtime["carla_port"], runtime["traffic_manager_port"]]
+                )
+            except RunnerError as exc:
+                attempt_manifest["cleanup_error"] = str(exc)
+                attempt_manifest["pipeline_valid"] = False
         evaluator_log.close()
         carla_log.close()
         attempt_manifest["finished_at"] = _utc_now()
@@ -705,6 +736,10 @@ def execute_run_plan(plan, repo_root=REPO_ROOT, resume=False):
         }
         manifest["updated_at"] = _utc_now()
         _write_json_atomic(manifest_path, manifest)
+        if result.get("cleanup_error"):
+            raise RunnerError(
+                f"{attempt['attempt_id']} cleanup failed: {result['cleanup_error']}"
+            )
 
     return manifest
 

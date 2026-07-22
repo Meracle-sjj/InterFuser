@@ -24,10 +24,20 @@ route18 在 `2026-07-22T03:40:51.756755+00:00` 完成。下一条 route6 于约 
 
 ## 3. 修复与验证
 
-提交 `f132929` 为 runner 增加 CARLA 退出后的端口释放等待，最长等待 60 秒，并将等待时长写入 attempt manifest。若端口仍未释放，runner 会写入 `cleanup_error`、将 attempt 标为 pipeline invalid，并立即终止整批，避免级联生成伪失败。
+提交 `f132929` 为 runner 增加 CARLA 退出后的端口释放等待，最长等待 60 秒，并将等待时长写入 attempt manifest。若端口仍未释放，runner 会写入 `cleanup_error`、将 attempt 标为 pipeline invalid，并立即终止整批，避免级联生成伪失败。该提交是第一阶段修复，后续真实运行证明它尚未覆盖显存和进程组回收。
 
 修复后的 runner 定向测试为 `8/8` 通过；带完整 CARLA、Leaderboard 和 Scenario Runner `PYTHONPATH` 的测试集为 `141/141` 通过。
 
-下一次 seed0 必须使用新 Run ID 从 7 条路线完整重跑。只有 `7/7` pipeline valid 才允许进入 seed1/2。
+## 4. v2 真实验证与深层根因
+
+`b0-d7-seed0-20260722-v2` 在提交 `e88913c` 上验证第一阶段修复。route18 再次 pipeline valid，记录 `port_release_wait_seconds=0.501`；紧随其后的 route6 未启动 CARLA，原因是 GPU 7 仍占用 `2223 MiB`，超过 `1024 MiB` 门槛。runner 当时未对普通 pipeline-invalid attempt fail-fast，约一秒后又启动 route12，因此该 run 被人工中止并整体判为无效。
+
+中止 route12 后，evaluator 已退出，但 CARLA binary 仍存活，进程状态为 `PPID=1`、`PGID=1808159`，其进程组 leader `CarlaUE4.sh` 已退出。旧 `_stop_process_group` 只等待 leader 的 `Popen` 状态；leader 先退出时，忽略 SIGTERM 的 CARLA 子进程不会再收到 SIGKILL。这同时解释了端口、显存和孤儿进程问题。
+
+## 5. 最终修复与重新准入
+
+提交 `d95b176` 将进程组、端口和 GPU 生命周期抽离到 `runtime_resources.py`。回收逻辑会在 SIGTERM 后检查整个 POSIX 进程组是否消失，宽限期结束仍有成员则向同一进程组发送 SIGKILL；随后分别等待 TCP 端口和 GPU 显存低于门槛。任何 pipeline-invalid attempt 都会在 manifest 落盘后立即终止批次。
+
+回归测试使用真实独立 session 构造“leader 退出、child 忽略 SIGTERM”的故障并证明整个进程组最终消失；完整测试集为 `144/144` 通过。下一次必须先完成 route18→route6 双路线生命周期 smoke，再使用新 Run ID 从 7 条 D7 路线完整重跑。只有 `7/7` pipeline valid 才允许进入 seed1/2。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

@@ -2,7 +2,7 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 状态 | **OPTIMIZATION-VALID / CLASS-WEIGHT-PENDING：五轮无权重诊断已完成，稀缺类权重 probe 已冻结** |
+| 状态 | **CLASS-WEIGHT-VALID / V-INTEGRATION-PENDING：稀缺类已脱离零 IoU，best 骨干候选已冻结** |
 | 生效日期 | 2026-07-23 |
 | 服务假设 | H1：交通域 ResNet-50 预训练改善语义质量、时序稳定性与闭环表现 |
 | 数据契约 | `docs/traffic_pretraining_dataset_v1.md` |
@@ -90,5 +90,13 @@ road_line IoU 从 0 增至 `0.230667`，vehicle 和 barrier 分别为 `0.609667/
 `[0.04598168, 0.06279949, 0.12245012, 0.29846202, 0.29153371, 2.92488764, 1.72414705, 0.82652360, 3.51836151, 0.18485318]`
 
 inverse-sqrt 在提高稀缺类梯度的同时比直接 inverse-frequency 更克制，避免 5,855 倍像素差异直接转化为极端损失倍率。配置必须显式记录支持像素、派生方法、来源 run 和 manifest 哈希；runner manifest 必须回显实际类别权重。若加权后稀缺类形成有效验证预测，优先冻结合理权重/预算；若仍为 0 或高方差失败，再按 M1 provenance 最小定向补采 pedestrian/rider/traffic-sign，不扩大停止边界方向。
+
+## 11. 类别权重 probe 结果与 M2 v1 候选
+
+Run ID `m2-semantic-class-weight-probe-v1-full-invsqrt-seed20260723` 在 Git `1492ea698ece95d7b151c33ebafc025324b17d5a` 上完成，manifest 为 `pipeline_valid=true`。best epoch 4 的 validation mIoU/macro-F1 为 `0.463243/0.574830`，较无权重 best 的 `0.395259/0.458918` 分别提高 `0.067984/0.115912`。
+
+pedestrian、rider、traffic_light、traffic_sign 的 best-checkpoint validation IoU 为 `0.056668/0.258753/0.156095/0.176434`，四类全部脱离零预测。加权使 background、road、vehicle、barrier 有 `0.0109-0.0272` 的 IoU 回落，但总体 mIoU 与交通关键类覆盖均改善。manifest SHA-256 为 `8413dab95acce8c5dbfa2c752453918744d16fe1f51f61c049a3c9645f1d011a`，best 骨干 SHA-256 为 `17aac98fcb3b513a672de6edd68ca4e697157fdfb285c4cc9cbfb1151bb8298e`，330 个参数张量从磁盘重载后 strict load 成功。
+
+该 best 骨干冻结为 M2 v1 下游候选。当前数据已足以形成可学习的十类交通语义表征，因此不启动补采；下一门禁是将该骨干作为唯一变量接入 InterFuser V 组，并与原始通用预训练在同一下游预算下对照。pedestrian 验证支持仍小，必须作为方差风险保留，不得把单 seed pilot 跨界表述为最终 H1 结论。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

@@ -79,6 +79,12 @@ split manifest 位于：
 
 人工复核报告位于 `results/thesis_m1/semantic_alignment_review_20260723T021026Z.json`，SHA-256 为 `d778f48894c8de122a36a86f662728297a06931f91d78efa4975be9dee3b7ee5`。审阅者逐一比较 road、sidewalk、road_line、vehicle、pedestrian、rider、traffic_light、traffic_sign、barrier 的 RGB、全语义着色和单类高亮三联图，9/9 均为 `accepted`；未发现相机错位、帧错配、整体偏移或类别反转。
 
+### 3.3 M2 训练反馈与数据充分性边界
+
+无类别权重的五轮全量 probe 使 road_line 从零 IoU 提升到 `0.230667`，但 pedestrian、rider、traffic_light、traffic_sign 仍为 0，证明优化预算与像素失衡是两个独立问题。保持数据与预算不变、仅引入 inverse-sqrt frequency 权重后，best validation mIoU 从 `0.395259` 提升到 `0.463243`，上述四类 IoU 分别为 `0.056668/0.258753/0.156095/0.176434`。
+
+因此当前 176 个 sequence、3,619 个逻辑帧的 M1 数据 v1 已足以训练出覆盖十类的 M2 v1 骨干候选，不启动新一轮补采。这不等于数据已足以支撑最终 H1：pedestrian 仅有 12 个 qualified sequence，validation/test 各 2 个，仍然是高方差边界。只有下游 V 组、多 seed 或错误分层显示该类不稳定时，才按第 5 节弱势参与者桶做最小定向补采；停止边界不是补采必要条件。
+
 ## 4. Pilot readiness 门槛
 
 机器配置定义的门槛不是最终训练规模，而是“值得启动第一次预训练”的最低条件：

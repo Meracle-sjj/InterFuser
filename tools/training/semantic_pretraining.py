@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 [INPUT]: 依赖 M1 类别配置与 split manifest、原始三相机 RGB/语义帧、仓库内 timm ResNet50d 和冻结的 ImageNet 权重。
-[OUTPUT]: 对外提供 TrainingContractError、load_training_contract、SemanticFrameDataset、SemanticPretrainingModel、DeterministicCrossEntropyLoss、ConfusionMetrics 与骨干导出/迁移校验 API。
+[OUTPUT]: 对外提供 TrainingContractError、load_training_contract、resolve_train_sample_limit、SemanticFrameDataset、SemanticPretrainingModel、DeterministicCrossEntropyLoss、ConfusionMetrics 与骨干导出/迁移校验 API。
 [POS]: tools/training 的 M2 核心领域层，把冻结数据契约转换为可训练张量、同构视觉骨干和可比较离线指标；不负责 GPU 独占或运行目录生命周期。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -104,8 +104,9 @@ def load_training_contract(config_path):
         raise TrainingContractError(
             f"unsupported training config schema_version: {raw.get('schema_version')}"
         )
-    if raw.get("status") != "smoke":
-        raise TrainingContractError("first M2 config status must be smoke")
+    status = raw.get("status")
+    if status not in {"smoke", "pilot"}:
+        raise TrainingContractError("training config status must be smoke or pilot")
 
     class_path = _resolve_repo_path(raw.get("class_config"), "class_config")
     split_path = _resolve_repo_path(raw.get("split_manifest"), "split_manifest")
@@ -179,6 +180,40 @@ def load_training_contract(config_path):
             raise TrainingContractError(f"data.{field} must be numeric")
     if any(float(value) <= 0 for value in data["image_std"]):
         raise TrainingContractError("data.image_std must be positive")
+    for field in ("expected_available_train_samples", "expected_available_validation_samples"):
+        if field in data:
+            _positive_int(data.get(field), f"data.{field}")
+    learning_curve_samples = data.get("learning_curve_train_samples")
+    if status == "pilot":
+        if (
+            not isinstance(learning_curve_samples, list)
+            or not learning_curve_samples
+            or any(
+                not isinstance(value, int) or isinstance(value, bool) or value <= 0
+                for value in learning_curve_samples
+            )
+        ):
+            raise TrainingContractError(
+                "pilot data.learning_curve_train_samples must contain positive integers"
+            )
+        if learning_curve_samples != sorted(set(learning_curve_samples)):
+            raise TrainingContractError(
+                "data.learning_curve_train_samples must be unique and ascending"
+            )
+        if learning_curve_samples[-1] != data["max_train_samples"]:
+            raise TrainingContractError(
+                "last learning-curve sample count must equal data.max_train_samples"
+            )
+        if data.get("validation_mode") != "full_split":
+            raise TrainingContractError("pilot data.validation_mode must be full_split")
+        if data.get("expected_available_validation_samples") != data["max_validation_samples"]:
+            raise TrainingContractError(
+                "pilot max_validation_samples must equal expected full split size"
+            )
+    elif learning_curve_samples is not None:
+        raise TrainingContractError(
+            "smoke config must not define learning_curve_train_samples"
+        )
 
     training = raw.get("training")
     if not isinstance(training, dict):
@@ -215,6 +250,26 @@ def load_training_contract(config_path):
     return normalized
 
 
+def resolve_train_sample_limit(contract, requested=None):
+    """Resolve one config-approved train budget without allowing ad hoc curve points."""
+    maximum = contract["data"]["max_train_samples"]
+    if requested is None:
+        return maximum
+    if not isinstance(requested, int) or isinstance(requested, bool) or requested <= 0:
+        raise TrainingContractError("requested train sample count must be positive")
+    if contract["status"] == "pilot":
+        allowed = contract["data"]["learning_curve_train_samples"]
+        if requested not in allowed:
+            raise TrainingContractError(
+                f"train sample count {requested} is not in configured learning curve {allowed}"
+            )
+    elif requested != maximum:
+        raise TrainingContractError(
+            f"smoke train sample count must remain {maximum}, got {requested}"
+        )
+    return requested
+
+
 def _resolve_rgb_path(sequence, camera, frame_id):
     directory = sequence / f"rgb_{camera}"
     matches = sorted(directory.glob(f"{frame_id}.*"))
@@ -229,7 +284,7 @@ def _resolve_rgb_path(sequence, camera, frame_id):
 class SemanticFrameDataset(Dataset):
     """Expose one RGB/semantic camera frame from a frozen split as one sample."""
 
-    def __init__(self, contract, split):
+    def __init__(self, contract, split, sample_limit=None):
         if split not in {"train", "validation", "test"}:
             raise TrainingContractError(f"unknown split: {split}")
         self.split = split
@@ -274,9 +329,25 @@ class SemanticFrameDataset(Dataset):
                         }
                     )
         records.sort(key=lambda item: (item["rank"], item["key"]))
-        limit = self.data_config[
+        self.available_samples = len(records)
+        expected_field = f"expected_available_{split}_samples"
+        expected_available = self.data_config.get(expected_field)
+        if expected_available is not None and self.available_samples != expected_available:
+            raise TrainingContractError(
+                f"split {split} inventory={self.available_samples} differs from "
+                f"configured {expected_available}"
+            )
+        configured_limit = self.data_config[
             "max_train_samples" if split == "train" else "max_validation_samples"
         ]
+        limit = configured_limit if sample_limit is None else sample_limit
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:
+            raise TrainingContractError(f"split {split} sample limit must be positive")
+        if limit > configured_limit or limit > self.available_samples:
+            raise TrainingContractError(
+                f"split {split} sample limit {limit} exceeds configured/data availability"
+            )
+        self.sample_limit = limit
         self.records = records[:limit]
         if not self.records:
             raise TrainingContractError(f"split {split} produced no training samples")

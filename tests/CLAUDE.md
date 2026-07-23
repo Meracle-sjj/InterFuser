@@ -22,6 +22,7 @@ test_render_traffic_element_overlays.py: 验证复核 overlay 的目标选择、
 test_run_thesis_baseline.py: 验证 D7 runner 的路线拆分、CARLA 原生 RPC 崩溃隔离、晚发 CARLA 退出分类、结果解析、资源门禁和 pipeline-invalid 立即终止。
 test_semantic_split_and_review.py: 验证 M1 split 的 Town+route 原子性、三组核心类别覆盖、内容哈希、RGB/mask 尺寸门禁与人工复核证据渲染。
 test_semantic_pretraining.py: 验证 M2 配置哈希、确定性样本、CARLA 标签映射、离线指标、ResNet50d 前向和 InterFuser 骨干严格迁移兼容性。
+test_summarize_semantic_learning_curve.py: 验证 M2 pilot 汇总拒绝缺失预算、非嵌套 train、validation 漂移、pipeline/provenance 异常与产物哈希漂移。
 test_summarize_thesis_baseline.py: 验证 M0 汇总器拒绝缺失、重复、基础设施失败和未授权输入漂移，并按冻结口径确定性归约完整路线×种子矩阵。
 test_traffic_element_collector.py: 验证采集器建立并保存多传感器、交通标签和测量目录。
 test_traffic_element_labels.py: 验证 schema v2 标签、坐标变换、旧 affordance 合并和记录校验。

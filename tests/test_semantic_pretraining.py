@@ -24,6 +24,7 @@ from tools.training.semantic_pretraining import (
     TrainingContractError,
     load_training_contract,
     make_backbone_export,
+    resolve_train_sample_limit,
     validate_backbone_export,
 )
 
@@ -184,6 +185,35 @@ class SemanticPretrainingTests(unittest.TestCase):
 
             with self.assertRaisesRegex(TrainingContractError, "SHA-256 mismatch"):
                 load_training_contract(config_path)
+
+    def test_pilot_only_allows_configured_nested_train_budgets(self):
+        with tempfile.TemporaryDirectory() as root:
+            config_path = self._fixture(root)
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["status"] = "pilot"
+            config["data"].update(
+                {
+                    "expected_available_train_samples": 2,
+                    "expected_available_validation_samples": 2,
+                    "learning_curve_train_samples": [1, 2],
+                    "validation_mode": "full_split",
+                    "max_validation_samples": 2,
+                }
+            )
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            contract = load_training_contract(config_path)
+
+            small = SemanticFrameDataset(contract, "train", sample_limit=1)
+            full = SemanticFrameDataset(contract, "train", sample_limit=2)
+
+            self.assertEqual(resolve_train_sample_limit(contract, 1), 1)
+            self.assertEqual(resolve_train_sample_limit(contract, 2), 2)
+            with self.assertRaisesRegex(TrainingContractError, "not in configured"):
+                resolve_train_sample_limit(contract, 3)
+            self.assertLess(
+                {item["key"] for item in small.records},
+                {item["key"] for item in full.records},
+            )
 
     def test_confusion_metrics_report_exact_values(self):
         metrics = ConfusionMetrics(3, ignore_index=255)

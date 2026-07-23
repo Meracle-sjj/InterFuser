@@ -8,6 +8,7 @@
 
 import argparse
 import json
+import math
 import os
 import platform
 import re
@@ -41,6 +42,7 @@ from tools.training.semantic_pretraining import (  # noqa: E402
     TrainingContractError,
     load_training_contract,
     make_backbone_export,
+    resolve_train_sample_limit,
     set_reproducible_seed,
     sha256_file,
     validate_backbone_export,
@@ -146,6 +148,25 @@ def _dependency_versions():
     }
 
 
+def _validate_finite_metrics(epoch_record):
+    for phase in ("train", "validation"):
+        metrics = epoch_record[phase]
+        for field in ("loss", "pixel_accuracy", "mean_iou", "macro_f1"):
+            value = metrics[field]
+            if value is None or not math.isfinite(value):
+                raise TrainingRunError(
+                    f"epoch {epoch_record['epoch']} {phase} {field} is not finite"
+                )
+        for item in metrics["per_class"]:
+            for field in ("iou", "f1"):
+                value = item[field]
+                if value is not None and not math.isfinite(value):
+                    raise TrainingRunError(
+                        f"epoch {epoch_record['epoch']} {phase} class "
+                        f"{item['name']} {field} is not finite"
+                    )
+
+
 def _prepare_run(config_path, run_id, result_root):
     if not RUN_ID_PATTERN.fullmatch(run_id):
         raise TrainingRunError(f"invalid run ID: {run_id}")
@@ -179,7 +200,7 @@ def _prepare_run(config_path, run_id, result_root):
     return contract, git_head, git_status, gpu_usage, run_directory
 
 
-def run_training(config_path, run_id, result_root):
+def run_training(config_path, run_id, result_root, train_sample_limit=None):
     """Execute one clean, resource-gated semantic pretraining run."""
     contract, git_head, git_status, gpu_usage, run_directory = _prepare_run(
         config_path, run_id, result_root
@@ -198,6 +219,7 @@ def run_training(config_path, run_id, result_root):
         "class_config_sha256": contract["class_config_sha256"],
         "split_manifest_sha256": contract["split_manifest_sha256"],
         "pretrained_source": contract["backbone"]["pretrained_source"],
+        "experiment_status": contract["status"],
         "pretrained_checkpoint_sha256": contract["backbone"][
             "pretrained_checkpoint_sha256"
         ],
@@ -216,7 +238,12 @@ def run_training(config_path, run_id, result_root):
             contract["training"]["seed"],
             deterministic=contract["training"]["deterministic"],
         )
-        train_dataset = SemanticFrameDataset(contract, "train")
+        resolved_train_limit = resolve_train_sample_limit(
+            contract, train_sample_limit
+        )
+        train_dataset = SemanticFrameDataset(
+            contract, "train", sample_limit=resolved_train_limit
+        )
         validation_dataset = SemanticFrameDataset(contract, "validation")
         train_loader = _make_loader(train_dataset, contract, shuffle=True)
         validation_loader = _make_loader(validation_dataset, contract, shuffle=False)
@@ -253,13 +280,13 @@ def run_training(config_path, run_id, result_root):
                     device,
                     class_names,
                 )
-            epochs.append(
-                {
-                    "epoch": epoch_index + 1,
-                    "train": train_metrics,
-                    "validation": validation_metrics,
-                }
-            )
+            epoch_record = {
+                "epoch": epoch_index + 1,
+                "train": train_metrics,
+                "validation": validation_metrics,
+            }
+            _validate_finite_metrics(epoch_record)
+            epochs.append(epoch_record)
 
         checkpoint_path = run_directory / "checkpoint_last.pth"
         torch.save(
@@ -288,6 +315,9 @@ def run_training(config_path, run_id, result_root):
                 "data": {
                     "train_samples": len(train_dataset),
                     "validation_samples": len(validation_dataset),
+                    "train_samples_available": train_dataset.available_samples,
+                    "validation_samples_available": validation_dataset.available_samples,
+                    "train_sample_limit_requested": resolved_train_limit,
                     "train_sample_keys": [item["key"] for item in train_dataset.records],
                     "validation_sample_keys": [
                         item["key"] for item in validation_dataset.records
@@ -336,12 +366,18 @@ def main(argv=None):
     )
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
+    parser.add_argument("--train-samples", type=int)
     parser.add_argument(
         "--result-root", type=Path, default=REPO_ROOT / "results" / "thesis_m2"
     )
     args = parser.parse_args(argv)
     try:
-        manifest = run_training(args.config, args.run_id, args.result_root)
+        manifest = run_training(
+            args.config,
+            args.run_id,
+            args.result_root,
+            train_sample_limit=args.train_samples,
+        )
     except (TrainingContractError, TrainingRunError) as exc:
         print(f"training error: {exc}", file=sys.stderr)
         return 2

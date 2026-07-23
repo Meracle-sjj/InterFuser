@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "status": "optimization_probe",
+  "protocol_document": "docs/semantic_pretraining_protocol_v1.md",
+  "class_config": "configs/thesis/semantic_classes_v1.json",
+  "class_config_sha256": "796222592efb68407a32bfdf9a03907b4631cf3f30d0d6a81528010e50f0b612",
+  "split_manifest": "results/thesis_m1/semantic_split_v1_town_route_seed20260723_20260723T020939Z.json",
+  "split_manifest_sha256": "81d9403a5ecd39fb5c4cf7ac8ffd3c79505a9583d683a960cf5a02b6da1fe8f2",
+  "backbone": {
+    "name": "resnet50d",
+    "feature_indices": [1, 2, 3, 4],
+    "pretrained_source": "timm_imagenet_resnet50d_ra2",
+    "pretrained_checkpoint": "/home/shijj/.cache/torch/hub/checkpoints/resnet50d_ra2-464e36ba.pth",
+    "pretrained_checkpoint_sha256": "464e36baa940a80971e717454e61e8f6fc1a1b284b7a3dbb6f6fd4c3da78533d"
+  },
+  "model": {
+    "num_classes": 10,
+    "decoder_channels": 64,
+    "dropout": 0.1
+  },
+  "data": {
+    "cameras": ["front", "left", "right"],
+    "input_width": 160,
+    "input_height": 120,
+    "sample_seed": 20260723,
+    "expected_available_train_samples": 7590,
+    "expected_available_validation_samples": 1725,
+    "max_train_samples": 7590,
+    "max_validation_samples": 1725,
+    "validation_mode": "full_split",
+    "image_mean": [0.485, 0.456, 0.406],
+    "image_std": [0.229, 0.224, 0.225]
+  },
+  "training": {
+    "seed": 20260723,
+    "epochs": 5,
+    "batch_size": 16,
+    "num_workers": 4,
+    "optimizer": "adamw",
+    "learning_rate": 0.0001,
+    "weight_decay": 0.01,
+    "ignore_index": 255,
+    "deterministic": true,
+    "physical_gpu_index": 6,
+    "gpu_busy_memory_threshold_mb": 1024,
+    "require_clean_git": true
+  }
+}

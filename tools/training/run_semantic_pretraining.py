@@ -102,6 +102,12 @@ def _make_loader(dataset, contract, shuffle):
     )
 
 
+def _cpu_model_state(model):
+    return {
+        key: value.detach().cpu().clone() for key, value in model.state_dict().items()
+    }
+
+
 def _run_epoch(model, loader, criterion, device, class_names, optimizer=None):
     training = optimizer is not None
     model.train(training)
@@ -263,6 +269,9 @@ def run_training(config_path, run_id, result_root, train_sample_limit=None):
             item["name"] for item in contract["class_config_loaded"]["classes"]
         ]
         epochs = []
+        best_epoch = None
+        best_validation_miou = float("-inf")
+        best_model_state = None
         for epoch_index in range(contract["training"]["epochs"]):
             train_metrics = _run_epoch(
                 model,
@@ -287,6 +296,11 @@ def run_training(config_path, run_id, result_root, train_sample_limit=None):
             }
             _validate_finite_metrics(epoch_record)
             epochs.append(epoch_record)
+            validation_miou = validation_metrics["mean_iou"]
+            if validation_miou > best_validation_miou:
+                best_epoch = epoch_index + 1
+                best_validation_miou = validation_miou
+                best_model_state = _cpu_model_state(model)
 
         checkpoint_path = run_directory / "checkpoint_last.pth"
         torch.save(
@@ -301,6 +315,21 @@ def run_training(config_path, run_id, result_root, train_sample_limit=None):
             },
             checkpoint_path,
         )
+        if best_model_state is None or best_epoch is None:
+            raise TrainingRunError("training produced no best model state")
+        best_checkpoint_path = run_directory / "checkpoint_best.pth"
+        torch.save(
+            {
+                "format_version": 1,
+                "epoch": best_epoch,
+                "selection_metric": "validation.mean_iou",
+                "selection_metric_value": best_validation_miou,
+                "training_config_sha256": contract["sha256"],
+                "model_state_dict": best_model_state,
+            },
+            best_checkpoint_path,
+        )
+        model.load_state_dict(best_model_state, strict=True)
         backbone_export = make_backbone_export(model, contract)
         transfer_validation = validate_backbone_export(backbone_export)
         backbone_path = run_directory / "backbone_resnet50d.pth"
@@ -327,6 +356,11 @@ def run_training(config_path, run_id, result_root, train_sample_limit=None):
                 "artifacts": {
                     "checkpoint": str(checkpoint_path),
                     "checkpoint_sha256": sha256_file(checkpoint_path),
+                    "best_checkpoint": str(best_checkpoint_path),
+                    "best_checkpoint_sha256": sha256_file(best_checkpoint_path),
+                    "best_epoch": best_epoch,
+                    "best_selection_metric": "validation.mean_iou",
+                    "best_selection_metric_value": best_validation_miou,
                     "backbone_export": str(backbone_path),
                     "backbone_export_sha256": sha256_file(backbone_path),
                     "transfer_validation": transfer_validation,

@@ -105,8 +105,10 @@ def load_training_contract(config_path):
             f"unsupported training config schema_version: {raw.get('schema_version')}"
         )
     status = raw.get("status")
-    if status not in {"smoke", "pilot"}:
-        raise TrainingContractError("training config status must be smoke or pilot")
+    if status not in {"smoke", "pilot", "optimization_probe"}:
+        raise TrainingContractError(
+            "training config status must be smoke, pilot, or optimization_probe"
+        )
 
     class_path = _resolve_repo_path(raw.get("class_config"), "class_config")
     split_path = _resolve_repo_path(raw.get("split_manifest"), "split_manifest")
@@ -212,8 +214,23 @@ def load_training_contract(config_path):
             )
     elif learning_curve_samples is not None:
         raise TrainingContractError(
-            "smoke config must not define learning_curve_train_samples"
+            f"{status} config must not define learning_curve_train_samples"
         )
+    if status == "optimization_probe":
+        if data.get("validation_mode") != "full_split":
+            raise TrainingContractError(
+                "optimization probe data.validation_mode must be full_split"
+            )
+        if data.get("expected_available_train_samples") != data["max_train_samples"]:
+            raise TrainingContractError(
+                "optimization probe must use the full configured train inventory"
+            )
+        if data.get("expected_available_validation_samples") != data[
+            "max_validation_samples"
+        ]:
+            raise TrainingContractError(
+                "optimization probe must use the full configured validation inventory"
+            )
 
     training = raw.get("training")
     if not isinstance(training, dict):
@@ -265,7 +282,7 @@ def resolve_train_sample_limit(contract, requested=None):
             )
     elif requested != maximum:
         raise TrainingContractError(
-            f"smoke train sample count must remain {maximum}, got {requested}"
+            f"{contract['status']} train sample count must remain {maximum}, got {requested}"
         )
     return requested
 

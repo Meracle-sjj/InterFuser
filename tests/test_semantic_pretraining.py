@@ -215,6 +215,30 @@ class SemanticPretrainingTests(unittest.TestCase):
                 {item["key"] for item in full.records},
             )
 
+    def test_optimization_probe_requires_full_train_and_validation(self):
+        with tempfile.TemporaryDirectory() as root:
+            config_path = self._fixture(root)
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["status"] = "optimization_probe"
+            config["data"].update(
+                {
+                    "expected_available_train_samples": 2,
+                    "expected_available_validation_samples": 2,
+                    "validation_mode": "full_split",
+                    "max_validation_samples": 2,
+                }
+            )
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+
+            contract = load_training_contract(config_path)
+
+            self.assertEqual(resolve_train_sample_limit(contract), 2)
+            with self.assertRaisesRegex(TrainingContractError, "must remain 2"):
+                resolve_train_sample_limit(contract, 1)
+            self.assertEqual(
+                SemanticFrameDataset(contract, "validation").available_samples, 2
+            )
+
     def test_confusion_metrics_report_exact_values(self):
         metrics = ConfusionMetrics(3, ignore_index=255)
         predictions = torch.tensor([[[0, 1], [2, 0]]])

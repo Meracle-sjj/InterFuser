@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "status": "pilot",
+  "protocol_document": "docs/traffic_pretraining_dataset_v1.md",
+  "assignment_seed": 20260723,
+  "split_unit": "town_route",
+  "splits": {
+    "train": 0.7,
+    "validation": 0.15,
+    "test": 0.15
+  },
+  "excluded_classes": ["background"],
+  "minimum_towns_per_split": 3,
+  "minimum_sequences_per_class_per_split": 1,
+  "maximum_sequence_ratio_deviation": 0.03
+}

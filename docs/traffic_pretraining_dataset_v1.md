@@ -2,11 +2,13 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 状态 | **PILOT-READY：索引分层抽样已通过，split 与人工对齐复核待冻结** |
-| 生效日期 | 2026-07-22 |
+| 状态 | **FROZEN：数据 v1、无泄漏 split 与人工对齐证据已冻结，允许进入 M2** |
+| 生效日期 | 2026-07-23 |
 | 服务假设 | H1：交通域 ResNet-50 预训练改善语义质量、时序稳定性与闭环表现 |
 | 类别配置 | `configs/thesis/semantic_classes_v1.json` |
+| 划分配置 | `configs/thesis/semantic_split_v1.json` |
 | 审计入口 | `tools/data/audit_semantic_pretraining_data.py` |
+| 划分入口 | `tools/data/build_semantic_split_manifest.py` |
 
 ## 1. 数据单元
 
@@ -61,7 +63,21 @@
 
 该 pilot 从 9,968 个 index sequence 中选择 176 个，覆盖 60 个分层、4 个 Town、3,619 个逻辑帧与 10,857 张语义 mask；报告为 `valid=true`、`ready=true`、结构错误 0，全部核心类别通过 qualified-mask 与 sequence 覆盖门槛。Town04 weather 15 和 weather 20 各仅有 1 个候选，因此审计器按 `min(3, available)` 全部纳入，最终数量不是理论值 180；这是冻结的数据覆盖边界，不得隐去。
 
-本次结果证明可复现抽样达到 pilot 准入，不代表已全量扫描 9,968 个 sequence，也不替代 sequence 级 split manifest 与人工 RGB/mask 对齐复核。
+本次结果证明可复现抽样达到 pilot 准入，不代表已全量扫描 9,968 个 sequence。该冻结抽样随后作为数据 v1 的明确边界进入 route-group split 与人工 RGB/mask 对齐复核。
+
+### 3.2 数据 v1 split 与对齐复核
+
+split manifest 位于：
+
+`results/thesis_m1/semantic_split_v1_town_route_seed20260723_20260723T020939Z.json`
+
+它消费 3.1 节 pilot 的完整 176 个 sequence，以 assignment seed `20260723` 按 `Town + route_id` 原子分组；同一路线在不同天气下的 sequence 不得跨 split。153 个 route group 被固定分为 train/validation/test 的 `102/25/26` 组，对应 `123/26/27` 个 sequence 与 `2,530/575/514` 个逻辑帧。三组 sequence 比例为 `69.8864%/14.7727%/15.3409%`，四个 Town 均在每组出现。
+
+每组都至少覆盖一个符合像素门槛的核心类别 sequence；其中稀缺的 pedestrian 在 train/validation/test 分别覆盖 `8/2/2` 个 sequence，避免随机比例划分造成 test 类别空洞。manifest 对每个 sequence 记录采集目录、Town、route、天气、三相机帧数、各类别像素与 qualified-mask 数，并分别计算 RGB/semantic 内容 SHA-256。泄漏检查为 sequence overlap `0`、route-group overlap `0`、全部选中 sequence 恰好分配一次。
+
+冻结哈希：split 配置 SHA-256 为 `fe0641ed9979bd723d30c01d78aaf657573c610b7924dac7dbbf680cd0123936`，manifest SHA-256 为 `81d9403a5ecd39fb5c4cf7ac8ffd3c79505a9583d683a960cf5a02b6da1fe8f2`；相同输入复算得到字节一致 JSON。
+
+人工复核报告位于 `results/thesis_m1/semantic_alignment_review_20260723T021026Z.json`，SHA-256 为 `d778f48894c8de122a36a86f662728297a06931f91d78efa4975be9dee3b7ee5`。审阅者逐一比较 road、sidewalk、road_line、vehicle、pedestrian、rider、traffic_light、traffic_sign、barrier 的 RGB、全语义着色和单类高亮三联图，9/9 均为 `accepted`；未发现相机错位、帧错配、整体偏移或类别反转。
 
 ## 4. Pilot readiness 门槛
 
@@ -88,7 +104,7 @@
 
 ## 6. 数据划分与泄漏防护
 
-禁止按单帧随机划分。最小划分单元是完整 route sequence；同一连续序列的所有相机和帧必须属于同一个 split。
+禁止按单帧随机划分。最小划分单元是完整 route sequence；数据 v1 进一步以 `Town + route_id` 为原子组，使同一路线不同天气下的所有 sequence、相机和帧属于同一个 split。
 
 pilot 阶段先收集至少三个 Town，再根据实际类别覆盖冻结 train/validation/test Town 与 route。正式划分 manifest 必须记录：
 
@@ -97,7 +113,7 @@ pilot 阶段先收集至少三个 Town，再根据实际类别覆盖冻结 train
 - split 归属与分配理由；
 - RGB、mask 和 manifest 的完整性校验值。
 
-在类别覆盖统计出来前不凭空固定 Town 划分；但一旦开始报告验证指标，split 不得随结果调整。
+数据 v1 不按 Town 整体留出，因为只有四个 Town 且 pedestrian 仅覆盖 12 个 sequence；强行 Town holdout 会让类别可检验性服从地图数量。划分器先为 train/validation/test 分别播种全部核心类别，再确定性平衡 route group、sequence、逻辑帧和类别覆盖；一旦开始报告验证指标，当前 manifest 不得随结果调整。
 
 ## 7. 训练接口边界
 
@@ -116,6 +132,6 @@ M1 只有满足以下条件才能完成：
 5. 每个核心类别至少人工检查一组 RGB/mask 对齐样本；
 6. 固化数据版本、审计 JSON 和采集配置后，才能进入 M2 预训练。
 
-当前下一步是基于完整 sequence 冻结无泄漏 split manifest，并为每个核心类别人工复核一组 RGB/mask 对齐样本；若后续需要补齐 Town04 weather 15/20，应进行最小定向补采，而不是盲目全量扫描或扩大停车点标签复杂度。
+上述六项门槛已全部满足，M1 数据 v1 冻结完成。下一步进入 M2：先冻结 10 类语义分割的训练配置、ResNet-50 初始化来源、训练预算与离线评价口径，再运行最小可复现预训练。Town04 weather 15/20 的候选不足仍是已知覆盖边界；只有训练或分层评价证明其形成实际缺口时才最小定向补采，不盲目全量扫描，也不扩大停车点标签复杂度。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

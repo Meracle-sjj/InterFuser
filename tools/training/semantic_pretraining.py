@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 [INPUT]: 依赖 M1 类别配置与 split manifest、原始三相机 RGB/语义帧、仓库内 timm ResNet50d 和冻结的 ImageNet 权重。
-[OUTPUT]: 对外提供 TrainingContractError、load_training_contract、SemanticFrameDataset、SemanticPretrainingModel、ConfusionMetrics 与骨干导出/迁移校验 API。
+[OUTPUT]: 对外提供 TrainingContractError、load_training_contract、SemanticFrameDataset、SemanticPretrainingModel、DeterministicCrossEntropyLoss、ConfusionMetrics 与骨干导出/迁移校验 API。
 [POS]: tools/training 的 M2 核心领域层，把冻结数据契约转换为可训练张量、同构视觉骨干和可比较离线指标；不负责 GPU 独占或运行目录生命周期。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -391,6 +391,23 @@ class SemanticPretrainingModel(nn.Module):
         )
         logits = self.fuse(fused)
         return F.interpolate(logits, size=input_size, mode="bilinear", align_corners=False)
+
+
+class DeterministicCrossEntropyLoss(nn.Module):
+    """Compute ignore-aware cross entropy without CUDA's nondeterministic NLL kernel."""
+
+    def __init__(self, ignore_index=DEFAULT_IGNORE_INDEX):
+        super().__init__()
+        self.ignore_index = int(ignore_index)
+
+    def forward(self, logits, labels):
+        valid = labels != self.ignore_index
+        if not torch.any(valid):
+            raise TrainingContractError("semantic batch contains no supervised pixels")
+        safe_labels = labels.masked_fill(~valid, 0)
+        log_probabilities = F.log_softmax(logits, dim=1)
+        selected = log_probabilities.gather(1, safe_labels.unsqueeze(1)).squeeze(1)
+        return -selected[valid].mean()
 
 
 class ConfusionMetrics:

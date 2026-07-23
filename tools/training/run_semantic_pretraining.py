@@ -27,7 +27,6 @@ for import_root in (REPO_ROOT, INTERFUSER_ROOT):
 import numpy as np  # noqa: E402
 import PIL  # noqa: E402
 import torch  # noqa: E402
-from torch import nn  # noqa: E402
 from torch.utils.data import DataLoader  # noqa: E402
 
 from tools.evaluation.runtime_resources import (  # noqa: E402
@@ -36,6 +35,7 @@ from tools.evaluation.runtime_resources import (  # noqa: E402
 )
 from tools.training.semantic_pretraining import (  # noqa: E402
     ConfusionMetrics,
+    DeterministicCrossEntropyLoss,
     SemanticFrameDataset,
     SemanticPretrainingModel,
     TrainingContractError,
@@ -224,7 +224,7 @@ def run_training(config_path, run_id, result_root):
         torch.cuda.set_device(device)
         torch.cuda.reset_peak_memory_stats(device)
         model = SemanticPretrainingModel(contract).to(device)
-        criterion = nn.CrossEntropyLoss(
+        criterion = DeterministicCrossEntropyLoss(
             ignore_index=contract["training"]["ignore_index"]
         )
         optimizer = torch.optim.AdamW(

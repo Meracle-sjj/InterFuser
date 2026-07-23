@@ -18,6 +18,7 @@ from PIL import Image
 
 from tools.training.semantic_pretraining import (
     ConfusionMetrics,
+    DeterministicCrossEntropyLoss,
     SemanticFrameDataset,
     SemanticPretrainingModel,
     TrainingContractError,
@@ -197,6 +198,25 @@ class SemanticPretrainingTests(unittest.TestCase):
         self.assertAlmostEqual(summary["per_class"][0]["iou"], 1.0)
         self.assertAlmostEqual(summary["per_class"][1]["iou"], 0.5)
         self.assertAlmostEqual(summary["per_class"][2]["iou"], 0.0)
+
+    def test_deterministic_loss_matches_standard_cross_entropy(self):
+        logits = torch.tensor(
+            [
+                [
+                    [[2.0, 0.1], [0.5, -1.0]],
+                    [[0.0, 1.5], [1.0, 0.0]],
+                    [[-1.0, 0.0], [0.0, 2.0]],
+                ]
+            ],
+            requires_grad=True,
+        )
+        labels = torch.tensor([[[0, 1], [2, 255]]])
+        expected = torch.nn.functional.cross_entropy(logits, labels, ignore_index=255)
+        actual = DeterministicCrossEntropyLoss(ignore_index=255)(logits, labels)
+
+        self.assertTrue(torch.allclose(actual, expected))
+        actual.backward()
+        self.assertTrue(torch.isfinite(logits.grad).all())
 
     def test_model_output_and_backbone_export_match_interfuser(self):
         with tempfile.TemporaryDirectory() as root:

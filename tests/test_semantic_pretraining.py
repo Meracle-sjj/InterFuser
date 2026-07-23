@@ -1,6 +1,6 @@
 """
 [INPUT]: 依赖 tools.training.semantic_pretraining 的配置、数据集、模型、指标和骨干导出 API，并以临时 M1 split/RGB/mask 构造最小训练契约。
-[OUTPUT]: 提供 provenance 哈希门禁、确定性样本选择、CARLA 标签映射、指标计算、ResNet50d 前向与 InterFuser 严格迁移兼容测试。
+[OUTPUT]: 提供 provenance 哈希门禁、确定性样本选择、CARLA 标签映射、无权重/加权损失、指标计算、ResNet50d 前向与 InterFuser 严格迁移兼容测试。
 [POS]: tests 的 M2 训练契约测试，阻止数据划分漂移、标签静默忽略、指标错误或不可迁移的视觉骨干进入真实训练。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -271,6 +271,40 @@ class SemanticPretrainingTests(unittest.TestCase):
         self.assertTrue(torch.allclose(actual, expected))
         actual.backward()
         self.assertTrue(torch.isfinite(logits.grad).all())
+
+    def test_weighted_deterministic_loss_matches_standard_cross_entropy(self):
+        logits = torch.tensor(
+            [
+                [
+                    [[2.0, 0.1], [0.5, -1.0]],
+                    [[0.0, 1.5], [1.0, 0.0]],
+                    [[-1.0, 0.0], [0.0, 2.0]],
+                ]
+            ],
+            requires_grad=True,
+        )
+        labels = torch.tensor([[[0, 1], [2, 255]]])
+        weights = torch.tensor([0.25, 1.0, 3.0])
+        expected = torch.nn.functional.cross_entropy(
+            logits, labels, weight=weights, ignore_index=255
+        )
+        actual = DeterministicCrossEntropyLoss(
+            ignore_index=255, class_weights=weights
+        )(logits, labels)
+
+        self.assertTrue(torch.allclose(actual, expected))
+        actual.backward()
+        self.assertTrue(torch.isfinite(logits.grad).all())
+
+    def test_rejects_invalid_class_weights(self):
+        with tempfile.TemporaryDirectory() as root:
+            config_path = self._fixture(root)
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["training"]["class_weights"] = [1.0, 0.0, 2.0]
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+
+            with self.assertRaisesRegex(TrainingContractError, "finite positive"):
+                load_training_contract(config_path)
 
     def test_model_output_and_backbone_export_match_interfuser(self):
         with tempfile.TemporaryDirectory() as root:

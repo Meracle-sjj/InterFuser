@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-[INPUT]: 依赖 M1 类别配置与 split manifest、原始三相机 RGB/语义帧、仓库内 timm ResNet50d 和冻结的 ImageNet 权重。
+[INPUT]: 依赖 M1 类别配置与 split manifest、原始三相机 RGB/语义帧、仓库内 timm ResNet50d、冻结的 ImageNet 权重与可选显式类别权重。
 [OUTPUT]: 对外提供 TrainingContractError、load_training_contract、resolve_train_sample_limit、SemanticFrameDataset、SemanticPretrainingModel、DeterministicCrossEntropyLoss、ConfusionMetrics 与骨干导出/迁移校验 API。
 [POS]: tools/training 的 M2 核心领域层，把冻结数据契约转换为可训练张量、同构视觉骨干和可比较离线指标；不负责 GPU 独占或运行目录生命周期。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -8,6 +8,7 @@
 
 import hashlib
 import json
+import math
 import random
 import sys
 from collections import OrderedDict
@@ -255,6 +256,22 @@ def load_training_contract(config_path):
     for field in ("deterministic", "require_clean_git"):
         if not isinstance(training.get(field), bool):
             raise TrainingContractError(f"training.{field} must be boolean")
+    class_weights = training.get("class_weights")
+    if class_weights is not None:
+        if not isinstance(class_weights, list) or len(class_weights) != num_classes:
+            raise TrainingContractError(
+                f"training.class_weights must contain {num_classes} values"
+            )
+        if any(
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or not math.isfinite(float(value))
+            or float(value) <= 0
+            for value in class_weights
+        ):
+            raise TrainingContractError(
+                "training.class_weights must contain finite positive numbers"
+            )
 
     normalized = dict(raw)
     normalized["path"] = config_path
@@ -482,11 +499,17 @@ class SemanticPretrainingModel(nn.Module):
 
 
 class DeterministicCrossEntropyLoss(nn.Module):
-    """Compute ignore-aware cross entropy without CUDA's nondeterministic NLL kernel."""
+    """Compute optionally weighted cross entropy without CUDA's nondeterministic NLL."""
 
-    def __init__(self, ignore_index=DEFAULT_IGNORE_INDEX):
+    def __init__(self, ignore_index=DEFAULT_IGNORE_INDEX, class_weights=None):
         super().__init__()
         self.ignore_index = int(ignore_index)
+        weights = (
+            None
+            if class_weights is None
+            else torch.as_tensor(class_weights, dtype=torch.float32)
+        )
+        self.register_buffer("class_weights", weights)
 
     def forward(self, logits, labels):
         valid = labels != self.ignore_index
@@ -495,7 +518,14 @@ class DeterministicCrossEntropyLoss(nn.Module):
         safe_labels = labels.masked_fill(~valid, 0)
         log_probabilities = F.log_softmax(logits, dim=1)
         selected = log_probabilities.gather(1, safe_labels.unsqueeze(1)).squeeze(1)
-        return -selected[valid].mean()
+        if self.class_weights is None:
+            return -selected[valid].mean()
+        if logits.shape[1] != self.class_weights.numel():
+            raise TrainingContractError(
+                "class weight count differs from model output channels"
+            )
+        pixel_weights = self.class_weights[safe_labels]
+        return -(selected[valid] * pixel_weights[valid]).sum() / pixel_weights[valid].sum()
 
 
 class ConfusionMetrics:

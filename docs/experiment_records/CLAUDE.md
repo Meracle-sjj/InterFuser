@@ -14,6 +14,7 @@ CLAUDE.md: 实验事实记录模块地图，约束摘要只能引用已完成 ru
 2026-07-23-m1-semantic-split-and-alignment.md: M1 数据 v1 冻结记录，固化 Town+route 无泄漏划分、三组类别覆盖、内容哈希与九类 RGB/mask 人工对齐结论。
 2026-07-23-m2-semantic-smoke-v1.md: M2 首次语义预训练 smoke，记录 deterministic CUDA NLL 失败前序、修复后的有效训练/验证、checkpoint 与同构骨干迁移证据。
 2026-07-23-m2-semantic-learning-curve-v1.md: M2 三点数据量 pilot，固化嵌套 25%/50%/100% train、完整 validation、逐类指标、产物哈希与优化/数据边界结论。
+2026-07-23-m2-semantic-optimization-probe-v1.md: M2 五轮无权重优化充分性 probe，固化逐轮/逐类指标、best checkpoint、产物哈希与类别权重准入结论。
 
 记录只陈述事实和结论边界；实验协议归 `../baseline_evaluation_protocol_v1.md`，大体积原始结果归远端 `results/`。
 

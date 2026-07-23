@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-[INPUT]: 依赖版本化 M2 配置、semantic_pretraining 领域 API、GPU owner 门禁、干净 Git 工作树与冻结 M1 数据。
+[INPUT]: 依赖版本化 M2 配置、semantic_pretraining 领域 API、GPU owner 门禁、干净 Git 工作树、冻结 M1 数据与可选类别权重。
 [OUTPUT]: 对外提供 TrainingRunError、run_training 与 CLI，原子生成训练/验证指标、完整 checkpoint、可迁移骨干权重和 run manifest。
 [POS]: tools/training 的 M2 单机运行编排器；只协调资源、训练生命周期与 provenance，不定义标签语义或修改 InterFuser 推理代码。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -226,6 +226,10 @@ def run_training(config_path, run_id, result_root, train_sample_limit=None):
         "split_manifest_sha256": contract["split_manifest_sha256"],
         "pretrained_source": contract["backbone"]["pretrained_source"],
         "experiment_status": contract["status"],
+        "loss": {
+            "name": "cross_entropy",
+            "class_weights": contract["training"].get("class_weights"),
+        },
         "pretrained_checkpoint_sha256": contract["backbone"][
             "pretrained_checkpoint_sha256"
         ],
@@ -258,8 +262,9 @@ def run_training(config_path, run_id, result_root, train_sample_limit=None):
         torch.cuda.reset_peak_memory_stats(device)
         model = SemanticPretrainingModel(contract).to(device)
         criterion = DeterministicCrossEntropyLoss(
-            ignore_index=contract["training"]["ignore_index"]
-        )
+            ignore_index=contract["training"]["ignore_index"],
+            class_weights=contract["training"].get("class_weights"),
+        ).to(device)
         optimizer = torch.optim.AdamW(
             model.parameters(),
             lr=contract["training"]["learning_rate"],

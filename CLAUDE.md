@@ -12,7 +12,7 @@ interfuser/ - 模型、训练入口和本地 timm 实现
 leaderboard/ - Leaderboard 评测入口、路线数据与 agent/collector
 scenario_runner/ - CARLA Scenario Runner 场景和违规判定逻辑
 tests/ - 数据标签、投影、导出与运行兼容性回归测试
-tools/ - 数据采集、审计、可视化和离线转换工具
+tools/ - 数据采集、审计、闭环评测、视觉预训练与离线转换工具
 data/ - 本机生成的数据产物，不进入 Git
 results/ - 评测结果与运行产物，不进入 Git
 </directory>
@@ -21,6 +21,7 @@ results/ - 评测结果与运行产物，不进入 Git
 docs/thesis_goal_v1.md - 毕业论文目标基线，所有研究与实现任务的最高优先级约束
 configs/thesis/baseline_eval_v1.json - M0 基线评测路线、哈希、环境和随机种子配置
 configs/thesis/semantic_classes_v1.json - M1 CARLA 原始标签到预训练类别的唯一映射与 readiness 门槛
+configs/thesis/semantic_pretraining_smoke_v1.json - M2 首次训练链路的模型、数据、初始化、预算与 GPU provenance 契约
 README.md - InterFuser 上游安装、数据生成、训练与评测说明
 requirements.txt - 上游 Python 依赖基线；实际实验以固定 conda 环境为准
 setup_carla.sh - 上游 CARLA 安装脚本；当前服务器实际运行 CARLA 0.9.16

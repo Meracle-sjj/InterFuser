@@ -3,9 +3,10 @@
 
 ## 成员清单
 
-CLAUDE.md: 工具模块地图，区分路线生成工具与数据审计子模块的职责边界。
+CLAUDE.md: 工具模块地图，区分路线生成、数据审计、闭环评测与视觉预训练子模块的职责边界。
 data/: 数据生成、审计、转换和复核工具；所有论文数据结论必须由可重复命令产生。
 evaluation/: 论文闭环评测的预检、执行与汇总工具；运行前必须消费版本化评测配置。
+training/: 论文预训练的数据加载、模型、指标、运行编排与可迁移权重导出；所有训练必须消费冻结配置和 split manifest。
 generate_intersection_routes.py: 从地图与路口结构生成路线定义，供场景数据构造使用。
 generate_scenarios.py: 生成 Scenario Runner 场景配置，使路线评测具备可触发事件。
 interpolate_route.py: 将稀疏路线控制点插值为稠密轨迹，供路线分析与采样消费。

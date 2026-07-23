@@ -2,7 +2,7 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 状态 | **SMOKE-PENDING：训练与迁移链路待真实运行验证** |
+| 状态 | **SMOKE-VALID：训练、验证、checkpoint 与骨干迁移链路已跑通** |
 | 生效日期 | 2026-07-23 |
 | 服务假设 | H1：交通域 ResNet-50 预训练改善语义质量、时序稳定性与闭环表现 |
 | 数据契约 | `docs/traffic_pretraining_dataset_v1.md` |
@@ -45,5 +45,13 @@ Smoke 只有同时满足以下条件才算跑通：
 6. 相关定向测试和完整 unittest 通过。
 
 Smoke 通过只解除 M2 工程链路门禁，不证明数据量充分、交通域预训练有效或 H1 成立。下一阶段必须先检查学习曲线与稀缺类别方差，再冻结 pilot 训练预算。
+
+## 5. 当前 smoke 结果
+
+有效 Run ID 为 `m2-semantic-smoke-v1-seed20260723-20260723-v2`，运行 Git 为 `dc3beb06a01f4a45daad51f37c0bb34f4f7aaa85`。32 个 train 与 16 个 validation 样本完成 1 epoch，manifest 为 `status=completed`、`pipeline_valid=true`；训练 loss/mIoU/macro-F1 为 `1.747226/0.095270/0.132538`，验证为 `1.420750/0.176070/0.206419`。
+
+验证抽样没有 pedestrian 和 traffic_sign 支持像素，因此上述数值只证明前向、反向、指标与落盘链路有效，不能用于类别精度比较。正式 pilot 必须使用完整 validation split 或显式保证核心类别覆盖，不得沿用 16 张 smoke 指标解释 H1。
+
+有效产物位于 `results/thesis_m2/m2-semantic-smoke-v1-seed20260723-20260723-v2/`。骨干导出包含 330 个参数张量，内存中与落盘后均严格加载成功；GPU 6 峰值 allocated/reserved 为 `503.939/540.0 MiB`，进程退出后回到 `81 MiB` 且无 compute owner。完整事实、失败前序与 SHA-256 记录在 `docs/experiment_records/2026-07-23-m2-semantic-smoke-v1.md`。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

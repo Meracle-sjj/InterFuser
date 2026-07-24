@@ -125,6 +125,7 @@ class RunInterfuserVisualTestTests(unittest.TestCase):
             {
                 "schema_version": 1,
                 "status": "preregistered",
+                "run_id": "frozen-test-run",
                 "training_config": str(formal_config),
                 "training_config_sha256": formal_hash,
                 "training_run_id": run_id,
@@ -172,6 +173,7 @@ class RunInterfuserVisualTestTests(unittest.TestCase):
             )
         self.assertEqual(contract["formal_epochs"], 2)
         self.assertEqual(contract["dataset"]["logical_frames"], 2)
+        self.assertEqual(contract["run_id"], "frozen-test-run")
 
     def test_test_index_hash_drift_is_rejected(self):
         with tempfile.TemporaryDirectory() as root:

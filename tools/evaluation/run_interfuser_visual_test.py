@@ -190,6 +190,9 @@ def load_visual_test_contract(config_path, require_training_complete=True, repo_
     raw = _read_json(config_path, "visual test config")
     if raw.get("schema_version") != CONFIG_SCHEMA_VERSION or raw.get("status") != "preregistered":
         raise VisualTestError("visual test config must be preregistered schema v1")
+    expected_run_id = raw.get("run_id")
+    if not isinstance(expected_run_id, str) or not RUN_ID_PATTERN.fullmatch(expected_run_id):
+        raise VisualTestError("visual test config run_id is invalid")
 
     training_config = _resolve_path(repo_root, raw.get("training_config"), "training_config")
     _verify_hash(training_config, raw.get("training_config_sha256"), "training_config")
@@ -514,6 +517,10 @@ def execute_visual_test(config_path, run_id):
     if not isinstance(run_id, str) or not RUN_ID_PATTERN.fullmatch(run_id):
         raise VisualTestError("run_id is invalid")
     contract = load_visual_test_contract(config_path, require_training_complete=True)
+    if run_id != contract["run_id"]:
+        raise VisualTestError(
+            f"run_id must match preregistered value: {contract['run_id']}"
+        )
     git_status = _git_output(REPO_ROOT, "status", "--porcelain")
     if contract["runtime"]["require_clean_git"] and git_status:
         raise VisualTestError("Git worktree must be clean")

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 [INPUT]: 依赖 InterFuser 五个下游输出张量与 CarlaMVDetDataset 的七元 target，消费预注册 occupancy/有效 waypoint 阈值。
-[OUTPUT]: 对外提供 MetricError、binary_confusion_metrics、binary_score_metrics 与 InterfuserMetricAccumulator，归约交通栅格、轨迹、路口、红灯和停车标志指标。
+[OUTPUT]: 对外提供 MetricError、binary_confusion_metrics、binary_score_metrics、InterfuserMetricAccumulator 与 InterfuserTemporalAccumulator，归约单帧任务指标和目标条件连续帧残差。
 [POS]: tools/evaluation 的纯离线指标层；不加载模型或数据集，使冻结 test 的数学口径可在 GPU runner 之外独立回归。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -309,3 +309,170 @@ class InterfuserMetricAccumulator:
                 targets, np.concatenate(self._class_predictions[name]), class_names
             )
         return metrics
+
+
+class InterfuserTemporalAccumulator:
+    """Measure target-conditioned prediction changes on adjacent sequence frames."""
+
+    CLASS_HEADS = InterfuserMetricAccumulator.CLASS_HEADS
+
+    def __init__(self, invalid_waypoint_threshold=1000.0):
+        self.invalid_waypoint_threshold = float(invalid_waypoint_threshold)
+        if (
+            not math.isfinite(self.invalid_waypoint_threshold)
+            or self.invalid_waypoint_threshold <= 0
+        ):
+            raise MetricError("invalid waypoint threshold must be finite and positive")
+        self.adjacent_pairs = 0
+        self._sequences_with_pairs = set()
+        self._traffic_residual_abs_sum = 0.0
+        self._waypoint_residual_distance_sum = np.zeros(10, dtype=np.float64)
+        self._waypoint_support = np.zeros(10, dtype=np.int64)
+        self._transition_errors = {name: 0 for name in self.CLASS_HEADS}
+        self._previous = None
+
+    @staticmethod
+    def _metadata(sequence_ids, frame_ids, batch_size):
+        if not isinstance(sequence_ids, (tuple, list)) or len(sequence_ids) != batch_size:
+            raise MetricError("temporal sequence ids must match batch size")
+        if any(not isinstance(value, str) or not value for value in sequence_ids):
+            raise MetricError("temporal sequence ids must be non-empty strings")
+        frames = _array(frame_ids).reshape(-1)
+        if frames.shape != (batch_size,) or not np.isfinite(frames).all():
+            raise MetricError("temporal frame ids must be finite and match batch size")
+        integer_frames = frames.astype(np.int64)
+        if np.any(integer_frames < 0) or not np.array_equal(frames, integer_frames):
+            raise MetricError("temporal frame ids must be nonnegative integers")
+        return list(sequence_ids), integer_frames
+
+    def update(self, outputs, targets, sequence_ids, frame_ids):
+        if not isinstance(outputs, (tuple, list)) or len(outputs) < 5:
+            raise MetricError("InterFuser outputs must contain at least five heads")
+        if not isinstance(targets, (tuple, list)) or len(targets) < 7:
+            raise MetricError("InterFuser targets must contain seven entries")
+
+        traffic_output = _array(outputs[0]).astype(np.float64, copy=False)
+        traffic_target = _array(targets[4]).astype(np.float64, copy=False)
+        if traffic_output.shape != traffic_target.shape or traffic_output.shape[1:] != (400, 7):
+            raise MetricError("temporal traffic tensors must have matching Bx400x7 shapes")
+        if not np.isfinite(traffic_output).all() or not np.isfinite(traffic_target).all():
+            raise MetricError("temporal traffic tensors contain non-finite values")
+        batch_size = traffic_output.shape[0]
+
+        waypoint_output = _array(outputs[1]).astype(np.float64, copy=False)
+        waypoint_target = _array(targets[1]).astype(np.float64, copy=False)
+        if waypoint_output.shape != waypoint_target.shape or waypoint_output.shape != (
+            batch_size,
+            10,
+            2,
+        ):
+            raise MetricError("temporal waypoint tensors must have matching Bx10x2 shapes")
+        if not np.isfinite(waypoint_output).all():
+            raise MetricError("temporal waypoint outputs contain non-finite values")
+
+        sequences, frames = self._metadata(sequence_ids, frame_ids, batch_size)
+        class_targets = {}
+        class_predictions = {}
+        for name, (output_index, target_index, _) in self.CLASS_HEADS.items():
+            logits = _array(outputs[output_index])
+            labels = _array(targets[target_index]).reshape(-1)
+            if logits.shape != (batch_size, 2) or labels.shape != (batch_size,):
+                raise MetricError(f"temporal {name} head has an unexpected shape")
+            if not np.isfinite(logits).all():
+                raise MetricError(f"temporal {name} logits contain non-finite values")
+            class_targets[name] = _require_binary(labels, f"temporal {name} targets")
+            class_predictions[name] = np.argmax(logits, axis=1).astype(np.int64)
+
+        for index in range(batch_size):
+            current = {
+                "sequence_id": sequences[index],
+                "frame_id": int(frames[index]),
+                "traffic_output": traffic_output[index, :, 0].copy(),
+                "traffic_target": traffic_target[index, :, 0].copy(),
+                "waypoint_output": waypoint_output[index].copy(),
+                "waypoint_target": waypoint_target[index].copy(),
+                "class_targets": {
+                    name: int(values[index]) for name, values in class_targets.items()
+                },
+                "class_predictions": {
+                    name: int(values[index])
+                    for name, values in class_predictions.items()
+                },
+            }
+            previous = self._previous
+            adjacent = (
+                previous is not None
+                and current["sequence_id"] == previous["sequence_id"]
+                and current["frame_id"] == previous["frame_id"] + 1
+            )
+            if adjacent:
+                self.adjacent_pairs += 1
+                self._sequences_with_pairs.add(current["sequence_id"])
+                predicted_delta = current["traffic_output"] - previous["traffic_output"]
+                target_delta = current["traffic_target"] - previous["traffic_target"]
+                self._traffic_residual_abs_sum += float(
+                    np.abs(predicted_delta - target_delta).sum()
+                )
+
+                current_valid = np.isfinite(current["waypoint_target"]).all(axis=1) & (
+                    np.abs(current["waypoint_target"])
+                    < self.invalid_waypoint_threshold
+                ).all(axis=1)
+                previous_valid = np.isfinite(previous["waypoint_target"]).all(axis=1) & (
+                    np.abs(previous["waypoint_target"])
+                    < self.invalid_waypoint_threshold
+                ).all(axis=1)
+                valid = current_valid & previous_valid
+                waypoint_residual = (
+                    current["waypoint_output"]
+                    - previous["waypoint_output"]
+                    - current["waypoint_target"]
+                    + previous["waypoint_target"]
+                )
+                waypoint_distance = np.linalg.norm(waypoint_residual, axis=1)
+                for horizon in range(10):
+                    if valid[horizon]:
+                        self._waypoint_support[horizon] += 1
+                        self._waypoint_residual_distance_sum[horizon] += float(
+                            waypoint_distance[horizon]
+                        )
+
+                for name in self.CLASS_HEADS:
+                    target_transition = (
+                        current["class_targets"][name]
+                        != previous["class_targets"][name]
+                    )
+                    predicted_transition = (
+                        current["class_predictions"][name]
+                        != previous["class_predictions"][name]
+                    )
+                    self._transition_errors[name] += int(
+                        target_transition != predicted_transition
+                    )
+            self._previous = current
+
+    def finalize(self):
+        if self.adjacent_pairs <= 0:
+            raise MetricError("temporal metrics require adjacent frame pairs")
+        if np.any(self._waypoint_support == 0):
+            raise MetricError("every temporal waypoint horizon requires adjacent support")
+        distance_per_horizon = (
+            self._waypoint_residual_distance_sum / self._waypoint_support
+        )
+        return {
+            "adjacent_pairs": self.adjacent_pairs,
+            "sequences_with_pairs": len(self._sequences_with_pairs),
+            "traffic_probability_delta_residual_mae": self._traffic_residual_abs_sum
+            / (self.adjacent_pairs * 400),
+            "waypoint_delta_residual_support_per_horizon": self._waypoint_support.tolist(),
+            "waypoint_delta_residual_mean_distance_per_horizon": distance_per_horizon.tolist(),
+            "waypoint_delta_residual_ade": float(
+                self._waypoint_residual_distance_sum.sum()
+                / self._waypoint_support.sum()
+            ),
+            "binary_transition_error_rate": {
+                name: self._transition_errors[name] / self.adjacent_pairs
+                for name in self.CLASS_HEADS
+            },
+            "binary_transition_error_count": dict(self._transition_errors),
+        }

@@ -1,6 +1,6 @@
 """
-[INPUT]: 依赖 interfuser_offline_metrics 的二分类曲线、混淆矩阵和五头 dataset-level 累加器。
-[OUTPUT]: 验证 AP/AUC/IoU、逐类指标、正确 stop-sign head 映射、逐时域 waypoint 归约与无支持门禁。
+[INPUT]: 依赖 interfuser_offline_metrics 的二分类曲线、混淆矩阵、五头 dataset-level 累加器与连续帧累加器。
+[OUTPUT]: 验证 AP/AUC/IoU、逐类指标、正确 stop-sign head 映射、逐时域 waypoint 归约、目标条件连续帧残差与无支持门禁。
 [POS]: tests 的 M2 H1 冻结 test 纯指标回归；不加载模型、数据集或 GPU。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -12,6 +12,7 @@ import numpy as np
 
 from tools.evaluation.interfuser_offline_metrics import (
     InterfuserMetricAccumulator,
+    InterfuserTemporalAccumulator,
     MetricError,
     binary_confusion_metrics,
     binary_score_metrics,
@@ -100,6 +101,72 @@ class InterfuserOfflineMetricsTests(unittest.TestCase):
     def test_binary_scores_reject_nonfinite_values(self):
         with self.assertRaisesRegex(MetricError, "non-finite"):
             binary_score_metrics([0, 1], [0.1, float("nan")], 0.5)
+
+    def _temporal_batch(self):
+        traffic_target = np.zeros((3, 400, 7), dtype=np.float32)
+        traffic_output = traffic_target.copy()
+        traffic_target[1, 0, 0] = 1.0
+        traffic_output[1, 0, 0] = 0.75
+
+        waypoint_target = np.zeros((3, 10, 2), dtype=np.float32)
+        waypoint_output = waypoint_target.copy()
+        waypoint_target[1, :, 0] = 1.0
+        waypoint_output[1, :, 0] = 1.5
+
+        def logits(predictions):
+            return np.asarray(
+                [[2.0, 0.0] if value == 0 else [0.0, 2.0] for value in predictions],
+                dtype=np.float32,
+            )
+
+        junction_targets = np.array([0, 1, 0], dtype=np.int64)
+        red_light_targets = np.array([0, 1, 0], dtype=np.int64)
+        stop_sign_targets = np.array([0, 0, 0], dtype=np.int64)
+        outputs = (
+            traffic_output,
+            waypoint_output,
+            logits([0, 1, 0]),
+            logits([0, 0, 0]),
+            logits([0, 1, 0]),
+        )
+        targets = (
+            np.zeros((3, 1), dtype=np.float32),
+            waypoint_target,
+            junction_targets,
+            red_light_targets,
+            traffic_target,
+            np.zeros((3, 1), dtype=np.float32),
+            stop_sign_targets,
+        )
+        return outputs, targets
+
+    def test_temporal_accumulator_uses_only_adjacent_sequence_frames(self):
+        outputs, targets = self._temporal_batch()
+        accumulator = InterfuserTemporalAccumulator()
+        accumulator.update(outputs, targets, ["sequence-a", "sequence-a", "sequence-b"], [0, 1, 0])
+        metrics = accumulator.finalize()
+
+        self.assertEqual(metrics["adjacent_pairs"], 1)
+        self.assertEqual(metrics["sequences_with_pairs"], 1)
+        self.assertAlmostEqual(
+            metrics["traffic_probability_delta_residual_mae"], 0.25 / 400
+        )
+        self.assertAlmostEqual(metrics["waypoint_delta_residual_ade"], 0.5)
+        self.assertEqual(metrics["binary_transition_error_rate"]["junction"], 0.0)
+        self.assertEqual(metrics["binary_transition_error_rate"]["red_light"], 1.0)
+        self.assertEqual(metrics["binary_transition_error_rate"]["stop_sign"], 1.0)
+
+    def test_temporal_accumulator_requires_an_adjacent_pair(self):
+        outputs, targets = self._temporal_batch()
+        accumulator = InterfuserTemporalAccumulator()
+        accumulator.update(
+            tuple(value[:2] for value in outputs),
+            tuple(value[:2] for value in targets),
+            ["sequence-a", "sequence-b"],
+            [0, 0],
+        )
+        with self.assertRaisesRegex(MetricError, "adjacent frame pairs"):
+            accumulator.finalize()
 
 
 if __name__ == "__main__":

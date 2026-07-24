@@ -25,7 +25,13 @@
     "traffic_positive_target_threshold": 0.01,
     "traffic_prediction_threshold": 0.5,
     "invalid_waypoint_threshold": 1000.0,
-    "require_both_binary_classes": true
+    "require_both_binary_classes": true,
+    "temporal": {
+      "enabled": true,
+      "expected_sequences": 324,
+      "expected_adjacent_pairs": 5462,
+      "expected_sequences_with_pairs": 324
+    }
   },
   "runtime": {
     "seed": 20260724,

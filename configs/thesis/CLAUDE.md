@@ -15,6 +15,6 @@ interfuser_downstream_split_v1.json: M2 H1 下游划分配置，将 M1 冻结 To
 interfuser_visual_initialization_v1.json: M2 H1 初始化配置，冻结 InterFuser/ResNet 代码哈希、ImageNet B0 与交通域 V 权重及唯一 RGB 变量不变式。
 interfuser_visual_pair_smoke_v1.json: M2 H1 配对训练 smoke 配置，冻结无泄漏索引/初始 checkpoint 哈希、各 2 sequence 确定性抽样、相同单 epoch 预算与 GPU 6/7。
 interfuser_visual_pair_formal_v1.json: M2 H1 配对正式训练配置，复用上游 2 GPU×batch 16×25 epoch 配方并强制绑定无泄漏 train/validation/test 索引。
-interfuser_visual_pair_test_v1.json: M2 H1 冻结 test 预注册配置，在 formal B0/V 完整归约前阻止 test 读取，并冻结 traffic/waypoint/三类二分类指标与 GPU 6 串行资源。
+interfuser_visual_pair_test_v1.json: M2 H1 冻结 test 预注册配置，在 formal B0/V 完整归约前阻止 test 读取，并冻结单帧任务指标、5,462 个连续帧对和 GPU 6 串行资源。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

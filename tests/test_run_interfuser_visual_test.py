@@ -1,6 +1,6 @@
 """
-[INPUT]: 依赖 run_interfuser_visual_test 的预注册配置、formal manifest/checkpoint/summary 门禁与配对差值 API。
-[OUTPUT]: 验证静态 test 契约、哈希漂移拒绝、训练未完成阻断、完整 B0/V 输入准入和固定方向差值。
+[INPUT]: 依赖 run_interfuser_visual_test 的预注册配置、formal manifest/checkpoint/summary 门禁、冻结连续帧计数与配对差值 API。
+[OUTPUT]: 验证静态 test 契约、哈希/帧对漂移拒绝、训练未完成阻断、完整 B0/V 输入准入和固定方向差值。
 [POS]: tests 的 M2 H1 冻结 test runner 纯文件回归；不启动模型、GPU 或外部进程。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -12,6 +12,7 @@ from pathlib import Path
 
 from tools.evaluation.run_interfuser_visual_test import (
     VisualTestError,
+    _StrictIndexedDataset,
     _metric_delta,
     _worker_evaluate,
     load_visual_test_contract,
@@ -149,6 +150,12 @@ class RunInterfuserVisualTestTests(unittest.TestCase):
                     "traffic_prediction_threshold": 0.5,
                     "invalid_waypoint_threshold": 1000.0,
                     "require_both_binary_classes": True,
+                    "temporal": {
+                        "enabled": True,
+                        "expected_sequences": 1,
+                        "expected_adjacent_pairs": 1,
+                        "expected_sequences_with_pairs": 1,
+                    },
                 },
                 "runtime": {
                     "seed": 7,
@@ -174,6 +181,7 @@ class RunInterfuserVisualTestTests(unittest.TestCase):
         self.assertEqual(contract["formal_epochs"], 2)
         self.assertEqual(contract["dataset"]["logical_frames"], 2)
         self.assertEqual(contract["run_id"], "frozen-test-run")
+        self.assertEqual(contract["temporal_shape"]["adjacent_pairs"], 1)
 
     def test_test_index_hash_drift_is_rejected(self):
         with tempfile.TemporaryDirectory() as root:
@@ -190,6 +198,17 @@ class RunInterfuserVisualTestTests(unittest.TestCase):
             with self.assertRaisesRegex(VisualTestError, "completed and pipeline valid"):
                 load_visual_test_contract(
                     config, require_training_complete=True, repo_root=root
+                )
+
+    def test_temporal_pair_count_drift_is_rejected(self):
+        with tempfile.TemporaryDirectory() as root:
+            config, _ = self._fixture(root, complete=False)
+            value = json.loads(config.read_text(encoding="utf-8"))
+            value["metrics"]["temporal"]["expected_adjacent_pairs"] = 2
+            self._write_json(config, value)
+            with self.assertRaisesRegex(VisualTestError, "expected_adjacent_pairs"):
+                load_visual_test_contract(
+                    config, require_training_complete=False, repo_root=root
                 )
 
     def test_complete_formal_pair_resolves_checkpoints_and_schema(self):
@@ -216,6 +235,15 @@ class RunInterfuserVisualTestTests(unittest.TestCase):
                 "junction": {"macro_f1": 7 + offset},
                 "red_light": {"macro_f1": 8 + offset},
                 "stop_sign": {"macro_f1": 9 + offset},
+                "temporal": {
+                    "traffic_probability_delta_residual_mae": 10 + offset,
+                    "waypoint_delta_residual_ade": 11 + offset,
+                    "binary_transition_error_rate": {
+                        "junction": 12 + offset,
+                        "red_light": 13 + offset,
+                        "stop_sign": 14 + offset,
+                    },
+                },
             }
 
         deltas = _metric_delta(metrics(0), metrics(0.25))
@@ -227,6 +255,28 @@ class RunInterfuserVisualTestTests(unittest.TestCase):
             output.write_text("existing", encoding="utf-8")
             with self.assertRaisesRegex(VisualTestError, "refusing to overwrite"):
                 _worker_evaluate({}, "b0", output)
+
+    def test_strict_indexed_dataset_bypasses_retry_substitution(self):
+        class Base:
+            route_frames = [("sequence-a", 4)]
+            transform = None
+
+            def __len__(self):
+                return 1
+
+            def __getitem__(self, index):
+                raise AssertionError("retrying __getitem__ must not be called")
+
+            def _get_item_impl(self, index):
+                return {"index": index}, (index,)
+
+        dataset = _StrictIndexedDataset(Base())
+        dataset.transform = "forwarded"
+        inputs, targets, metadata = dataset[0]
+        self.assertEqual(inputs, {"index": 0})
+        self.assertEqual(targets, (0,))
+        self.assertEqual(metadata, {"sequence_id": "sequence-a", "frame_id": 4})
+        self.assertEqual(dataset._base.transform, "forwarded")
 
 
 if __name__ == "__main__":

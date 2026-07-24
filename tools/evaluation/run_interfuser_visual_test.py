@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 [INPUT]: 依赖预注册 visual-pair test 配置、完成且 pipeline-valid 的 formal B0/V manifest、冻结 test index、best checkpoint 与 runtime_resources。
-[OUTPUT]: 对外提供 VisualTestError、load_visual_test_contract、execute_visual_test 与 CLI，以隔离单 GPU worker 串行生成 B0/V test 指标、差值和资源 manifest。
+[OUTPUT]: 对外提供 VisualTestError、load_visual_test_contract、execute_visual_test 与 CLI，以严格索引的隔离单 GPU worker 串行生成 B0/V 单帧/连续帧 test 指标、差值和资源 manifest。
 [POS]: tools/evaluation 的 M2 H1 冻结 test runner；位于正式配对训练之后、D7 闭环之前，训练未完整归约时拒绝读取 test。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -28,6 +28,7 @@ for import_root in (REPO_ROOT, INTERFUSER_ROOT):
 
 from tools.evaluation.interfuser_offline_metrics import (  # noqa: E402
     InterfuserMetricAccumulator,
+    InterfuserTemporalAccumulator,
     MetricError,
 )
 from tools.evaluation.runtime_resources import (  # noqa: E402
@@ -47,6 +48,30 @@ RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$")
 
 class VisualTestError(RuntimeError):
     """Raised when frozen test provenance or pair comparability is invalid."""
+
+
+class _StrictIndexedDataset:
+    """Attach frame identity and bypass training-time sample substitution."""
+
+    def __init__(self, base):
+        object.__setattr__(self, "_base", base)
+
+    def __len__(self):
+        return len(self._base)
+
+    def __getattr__(self, name):
+        return getattr(self._base, name)
+
+    def __setattr__(self, name, value):
+        setattr(self._base, name, value)
+
+    def __getitem__(self, index):
+        inputs, targets = self._base._get_item_impl(index)
+        sequence_id, frame_id = self._base.route_frames[index]
+        return inputs, targets, {
+            "sequence_id": sequence_id,
+            "frame_id": frame_id,
+        }
 
 
 def _utc_now():
@@ -115,6 +140,45 @@ def _finite_positive(value, label):
     if not math.isfinite(value) or value <= 0:
         raise VisualTestError(f"{label} must be finite and positive")
     return value
+
+
+def _test_index_temporal_shape(path):
+    sequences = 0
+    logical_frames = 0
+    adjacent_pairs = 0
+    sequences_with_pairs = 0
+    with Path(path).open(encoding="utf-8") as stream:
+        for line_number, raw_line in enumerate(stream, start=1):
+            line = raw_line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            if len(parts) not in (2, 3):
+                raise VisualTestError(
+                    f"test index line {line_number} must contain 2 or 3 fields"
+                )
+            try:
+                frames = int(parts[-1])
+            except ValueError as exc:
+                raise VisualTestError(
+                    f"test index line {line_number} has an invalid frame count"
+                ) from exc
+            if frames <= 0:
+                raise VisualTestError(
+                    f"test index line {line_number} frame count must be positive"
+                )
+            sequences += 1
+            logical_frames += frames
+            adjacent_pairs += frames - 1
+            sequences_with_pairs += int(frames > 1)
+    if sequences <= 0:
+        raise VisualTestError("test index contains no sequences")
+    return {
+        "sequences": sequences,
+        "logical_frames": logical_frames,
+        "adjacent_pairs": adjacent_pairs,
+        "sequences_with_pairs": sequences_with_pairs,
+    }
 
 
 def _validate_summary(path, expected_epochs):
@@ -253,6 +317,27 @@ def load_visual_test_contract(config_path, require_training_complete=True, repo_
         "invalid_waypoint_threshold",
     ):
         _finite_positive(metrics.get(field), f"metrics.{field}")
+    temporal = metrics.get("temporal") or {}
+    if temporal.get("enabled") is not True:
+        raise VisualTestError("metrics.temporal must be enabled for H1")
+    for field in (
+        "expected_sequences",
+        "expected_adjacent_pairs",
+        "expected_sequences_with_pairs",
+    ):
+        _positive_int(temporal.get(field), f"metrics.temporal.{field}")
+    temporal_shape = _test_index_temporal_shape(test_index)
+    if temporal_shape["logical_frames"] != logical_frames:
+        raise VisualTestError("test index frame count differs from dataset.logical_frames")
+    for config_field, shape_field in (
+        ("expected_sequences", "sequences"),
+        ("expected_adjacent_pairs", "adjacent_pairs"),
+        ("expected_sequences_with_pairs", "sequences_with_pairs"),
+    ):
+        if temporal[config_field] != temporal_shape[shape_field]:
+            raise VisualTestError(
+                f"metrics.temporal.{config_field} differs from frozen test index"
+            )
 
     runtime = raw.get("runtime") or {}
     for field in (
@@ -290,6 +375,7 @@ def load_visual_test_contract(config_path, require_training_complete=True, repo_
             "split_manifest_path": split_manifest,
             "dataset_root_path": dataset_root,
             "test_index_path": test_index,
+            "temporal_shape": temporal_shape,
             "result_root_path": result_root,
             "training_manifest_path": training_manifest,
         }
@@ -336,7 +422,7 @@ def _worker_evaluate(contract, variant, output_path):
     )
     model.cuda().eval()
     data_config = resolve_data_config({}, model=model, verbose=False)
-    dataset = create_carla_dataset(
+    base_dataset = create_carla_dataset(
         "carla",
         root=str(contract["dataset_root_path"]),
         towns=contract["dataset"]["towns"],
@@ -347,6 +433,8 @@ def _worker_evaluate(contract, variant, output_path):
         augment_prob=0.0,
         dataset_index=str(contract["test_index_path"]),
     )
+
+    dataset = _StrictIndexedDataset(base_dataset)
     loader = create_carla_loader(
         dataset,
         input_size=data_config["input_size"],
@@ -370,12 +458,21 @@ def _worker_evaluate(contract, variant, output_path):
         contract["metrics"]["traffic_prediction_threshold"],
         contract["metrics"]["invalid_waypoint_threshold"],
     )
+    temporal_accumulator = InterfuserTemporalAccumulator(
+        contract["metrics"]["invalid_waypoint_threshold"]
+    )
     started = time.monotonic()
     with torch.inference_mode():
-        for batch_index, (inputs, targets) in enumerate(loader):
+        for batch_index, (inputs, targets, metadata) in enumerate(loader):
             inputs = {name: value.cuda(non_blocking=False) for name, value in inputs.items()}
             outputs = model(inputs)
             accumulator.update(outputs, targets)
+            temporal_accumulator.update(
+                outputs,
+                targets,
+                metadata["sequence_id"],
+                metadata["frame_id"],
+            )
             if batch_index % runtime["log_interval_batches"] == 0:
                 print(
                     f"variant={variant} batch={batch_index}/{len(loader)} ",
@@ -383,6 +480,15 @@ def _worker_evaluate(contract, variant, output_path):
                     flush=True,
                 )
     metrics = accumulator.finalize()
+    metrics["temporal"] = temporal_accumulator.finalize()
+    for metric_field, shape_field in (
+        ("adjacent_pairs", "adjacent_pairs"),
+        ("sequences_with_pairs", "sequences_with_pairs"),
+    ):
+        if metrics["temporal"][metric_field] != contract["temporal_shape"][shape_field]:
+            raise VisualTestError(
+                f"temporal {metric_field} differs from frozen test index"
+            )
     result = {
         "worker_schema_version": 1,
         "variant": variant,
@@ -500,6 +606,29 @@ def _metric_delta(b0, v):
         "junction_macro_f1": ("junction", "macro_f1"),
         "red_light_macro_f1": ("red_light", "macro_f1"),
         "stop_sign_macro_f1": ("stop_sign", "macro_f1"),
+        "temporal_traffic_delta_residual_mae": (
+            "temporal",
+            "traffic_probability_delta_residual_mae",
+        ),
+        "temporal_waypoint_delta_residual_ade": (
+            "temporal",
+            "waypoint_delta_residual_ade",
+        ),
+        "temporal_junction_transition_error_rate": (
+            "temporal",
+            "binary_transition_error_rate",
+            "junction",
+        ),
+        "temporal_red_light_transition_error_rate": (
+            "temporal",
+            "binary_transition_error_rate",
+            "red_light",
+        ),
+        "temporal_stop_sign_transition_error_rate": (
+            "temporal",
+            "binary_transition_error_rate",
+            "stop_sign",
+        ),
     }
 
     def value_at(root, path):

@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "status": "preregistered",
+  "protocol_document": "docs/interfuser_visual_transfer_protocol_v1.md",
+  "training_config": "configs/thesis/interfuser_visual_pair_formal_v1.json",
+  "training_config_sha256": "bc77afd5cbc0656d935c70fa15d21509474d533b6668d4c7f0f96a6f1a0c1738",
+  "training_run_id": "m2-interfuser-visual-pair-formal-v1-seed20260723-20260724-v1",
+  "downstream_split_manifest": "results/thesis_m2/interfuser_downstream_split_v1_20260724/split_manifest.json",
+  "downstream_split_manifest_sha256": "711a70dcfffd7da9e49d68a71ef83f4ee3f1dc8a49d0b41c6d06f7b3d3bb4f70",
+  "dataset": {
+    "root": "/data1/shijj/interfuser_data",
+    "test_index": "results/thesis_m2/interfuser_downstream_split_v1_20260724/test_dataset_index.txt",
+    "test_index_sha256": "c77c81f1a11dfdaffb064c2439149a39a834cbc5bc94c12cffea654249c1768d",
+    "logical_frames": 5786,
+    "towns": [1, 3, 4, 5],
+    "weathers": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 20]
+  },
+  "model": {
+    "name": "interfuser_baseline",
+    "multi_view_input_size": [3, 128, 128],
+    "with_lidar": true
+  },
+  "metrics": {
+    "traffic_positive_target_threshold": 0.01,
+    "traffic_prediction_threshold": 0.5,
+    "invalid_waypoint_threshold": 1000.0,
+    "require_both_binary_classes": true
+  },
+  "runtime": {
+    "seed": 20260724,
+    "gpu": 6,
+    "batch_size": 16,
+    "workers": 16,
+    "log_interval_batches": 50,
+    "timeout_seconds_per_variant": 3600,
+    "gpu_busy_memory_threshold_mb": 1024,
+    "require_clean_git": true
+  },
+  "result_root": "results/thesis_m2"
+}

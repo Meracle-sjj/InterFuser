@@ -2,12 +2,13 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 状态 | **FORMAL-PENDING：B0/V 配对 smoke 已有效完成，正式训练契约待执行** |
+| 状态 | **FORMAL-RUNNING：B0/V 配对正式训练执行中，冻结 test 指标已预注册但禁止运行** |
 | 服务假设 | H1：交通域 ResNet-50 初始化优于通用 ImageNet 初始化 |
 | 数据配置 | `configs/thesis/interfuser_downstream_split_v1.json` |
 | 初始化配置 | `configs/thesis/interfuser_visual_initialization_v1.json` |
 | 配对 smoke 配置 | `configs/thesis/interfuser_visual_pair_smoke_v1.json` |
 | 配对正式配置 | `configs/thesis/interfuser_visual_pair_formal_v1.json` |
+| 冻结 test 配置 | `configs/thesis/interfuser_visual_pair_test_v1.json` |
 | 索引构建器 | `tools/data/build_interfuser_downstream_indexes.py` |
 | 初始化生成器 | `tools/training/interfuser_visual_pair.py` |
 | 配对训练 runner | `tools/training/run_interfuser_visual_pair.py` |
@@ -62,5 +63,13 @@ runner 必须拒绝已有 GPU compute owner、分布式端口占用、Git 脏工
 formal 配置必须同时绑定 train、validation 与从未参与模型选择的 test index。validation 选择 best checkpoint；test 只在两个正式训练完成后由独立离线 evaluator 一次性评估。后续 D7 必须分别评测本配对训练产出的 B0/V checkpoint，M0 原始 checkpoint 只作为基线校准证据，不替代正式配对 B0。
 
 正式配置 SHA-256 为 `bc77afd5cbc0656d935c70fa15d21509474d533b6668d4c7f0f96a6f1a0c1738`；首次且唯一准入 Run ID 冻结为 `m2-interfuser-visual-pair-formal-v1-seed20260723-20260724-v1`。runner 拒绝覆盖同名目录，后续监控只能续查该产物，不得重复启动。
+
+## 7. 冻结 test 离线评价契约
+
+test 配置在 formal 结果完成前预注册，SHA-256 为 `7aef8ba9c3be8ef7d3a2cb865323d3c109a03821cf3afd524c66f933d884d089`。runner 必须拒绝未完成、pipeline-invalid、summary 非 25 行、checkpoint/schema/hash 漂移或 B0/V 参数不可比的 formal manifest；只有两组 formal best checkpoint 都通过后，才可在 GPU 6 上按 B0 后 V 串行读取 test index `c77c81f1a11dfdaffb064c2439149a39a834cbc5bc94c12cffea654249c1768d`。
+
+指标口径固定为：traffic target channel 0 以 `>=0.01` 定义 occupied，预测以 `>=0.5` 形成固定阈值混淆，同时报告 threshold-independent AP/AUC、occupied IoU、概率/属性/速度 MAE；waypoint 排除绝对值 `>=1000` 的 padding，报告每个 horizon 支持数、距离与坐标 MAE、ADE 和 horizon-10 FDE；junction、red-light、stop-sign 报告混淆矩阵、accuracy、macro precision/recall/F1 和逐类支持/precision/recall/F1。任何二分类缺一类或 waypoint horizon 无支持属于数据评价基础设施不足，不得写成模型失败。
+
+上游 `train.py::validate` 的 stop-sign accuracy 当前错误复用 traffic-light 的 `output[3]/target[3]`；该值不进入 summary、best checkpoint 选择或本协议结论。独立 evaluator 固定使用正确的 `output[4]/target[6]`，并由纯指标测试防止回归。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

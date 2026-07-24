@@ -80,6 +80,8 @@ test 配置在 formal 结果完成前预注册，SHA-256 为 `429fb5722754bb5ab7
 
 冻结 test pipeline-valid 后才允许生成 B0/V D7 配置，并绑定 formal manifest 与两个 best checkpoint 的最终哈希。两组必须使用相同的 M0 路线、场景、agent、控制器、CARLA/Leaderboard/Scenario Runner 哈希，相同 GPU 6、graphics adapter 7、端口 2155/2255、背景交通、环境变量与外部超时；唯一模型差异是 checkpoint path/hash/provenance。执行顺序固定为 B0 后 V，每组路线顺序 `18,6,12,30,36,39,0`，每条路线依次 seeds `0,1,2`，共 42 个 attempt。任一 pipeline-invalid 立即停止，不把缺失结果记为零，也不从统计中静默删除。
 
+`configs/thesis/interfuser_visual_d7_build_v1.json` 在 test 结果前冻结 M0 模板哈希、三份输出路径与唯一 Run ID：pair=`m2-interfuser-visual-d7-pair-seeds0-2-20260724-v1`、B0=`m2-interfuser-visual-d7-b0-seeds0-2-20260724-v1`、V=`m2-interfuser-visual-d7-v-seeds0-2-20260724-v1`。`tools/evaluation/build_interfuser_visual_d7_configs.py` 在 test manifest 不存在时只允许静态 preflight；只有 formal/test 均 completed+pipeline-valid 且 test 实际 checkpoint 与 formal best 哈希一致后，才一次性生成两份 child config 和一份 pair config，任一目标已存在都拒绝覆盖。
+
 唯一准入入口为 `tools/evaluation/run_interfuser_visual_d7_pair.py`：父级配置同时绑定 pipeline-valid test manifest 与两份 child config 哈希，preflight 复用 M0 runner 构建计划但不启动 CARLA，显式 `--execute` 后才按 B0→V 串行运行。父级/子级目录默认拒绝覆盖；`--resume` 只跳过已 pipeline-valid 的 attempt，任何不完整 attempt 目录仍要求先人工审计，不能自动重跑并抹去失败证据。
 
 D7 主指标为 Driving Score，Route Completion 与 Infraction Score 为共同报告的诊断指标。每个 variant 先在同 route 内对三个 seed 求均值，再对七条 route 做宏平均；配对差值始终定义为 `V - B0`，并同时报告 21 个 route×seed 差值、七个 route 均值差、三个 seed 宏平均差、均值、标准差、最小值与最大值。样本量只支持描述性 v1 结论，不用事后选择显著性检验或声称超出冻结 D7 的总体泛化。

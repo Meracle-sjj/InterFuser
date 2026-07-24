@@ -31,6 +31,7 @@ test_summarize_semantic_learning_curve.py: 验证 M2 pilot 汇总拒绝缺失预
 test_summarize_thesis_baseline.py: 验证 M0 汇总器拒绝缺失、重复、基础设施失败和未授权输入漂移，并按冻结口径确定性归约完整路线×种子矩阵。
 test_summarize_interfuser_visual_d7.py: 验证 M2 H1 汇总器要求 B0/V 各 21/21、固定 attempt 顺序、checkpoint-only 差异，并按冻结 offline+D7 规则生成结论。
 test_run_interfuser_visual_d7_pair.py: 验证 M2 H1 D7 父级 runner 的 test 准入、B0→V 串行顺序、42/42 完成门槛、失败即停和目录幂等。
+test_build_interfuser_visual_d7_configs.py: 验证 D7 build 契约在 test 前只允许 preflight，并在 test 有效后确定性生成三份 checkpoint/provenance 绑定配置且禁止覆盖。
 test_traffic_element_collector.py: 验证采集器建立并保存多传感器、交通标签和测量目录。
 test_traffic_element_labels.py: 验证 schema v2 标签、坐标变换、旧 affordance 合并和记录校验。
 test_traffic_element_projection.py: 验证世界/传感器投影、深度解码、证据关联与标线候选。

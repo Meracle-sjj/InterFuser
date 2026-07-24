@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "status": "preregistered",
+  "protocol_document": "docs/interfuser_visual_transfer_protocol_v1.md",
+  "baseline_template": "configs/thesis/baseline_eval_v1.json",
+  "baseline_template_sha256": "64a54304b76ac877bc02d23a0ffaa9010aaa0ac95ef7114f9c54160351b7a674",
+  "formal_training_config": "configs/thesis/interfuser_visual_pair_formal_v1.json",
+  "formal_training_config_sha256": "bc77afd5cbc0656d935c70fa15d21509474d533b6668d4c7f0f96a6f1a0c1738",
+  "formal_training_run_id": "m2-interfuser-visual-pair-formal-v1-seed20260723-20260724-v1",
+  "visual_test_config": "configs/thesis/interfuser_visual_pair_test_v1.json",
+  "visual_test_config_sha256": "429fb5722754bb5ab7d7f2172bfb6aaed940706b0b50933e98beb5827d2c15ee",
+  "visual_test_run_id": "m2-interfuser-visual-pair-test-v1-seed20260724-20260724-v1",
+  "visual_test_manifest": "results/thesis_m2/m2-interfuser-visual-pair-test-v1-seed20260724-20260724-v1/test_manifest.json",
+  "route_order": [18, 6, 12, 30, 36, 39, 0],
+  "seeds": [0, 1, 2],
+  "result_root": "results/thesis_m2",
+  "run_ids": {
+    "pair": "m2-interfuser-visual-d7-pair-seeds0-2-20260724-v1",
+    "b0": "m2-interfuser-visual-d7-b0-seeds0-2-20260724-v1",
+    "v": "m2-interfuser-visual-d7-v-seeds0-2-20260724-v1"
+  },
+  "output_configs": {
+    "b0": "configs/thesis/interfuser_visual_d7_b0_v1.json",
+    "v": "configs/thesis/interfuser_visual_d7_v_v1.json",
+    "pair": "configs/thesis/interfuser_visual_d7_pair_v1.json"
+  }
+}

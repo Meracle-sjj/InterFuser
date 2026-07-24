@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "protocol_document": "docs/interfuser_visual_transfer_protocol_v1.md",
+  "dataset_root": "/data1/shijj/interfuser_data",
+  "dataset_index": "/data1/shijj/interfuser_data/dataset_index.txt",
+  "dataset_index_sha256": "56c83f46a1010ee43021bbc2f97cafde9b3c2771522088ae938a2df2ea477ff1",
+  "semantic_split_manifest": "results/thesis_m1/semantic_split_v1_town_route_seed20260723_20260723T020939Z.json",
+  "semantic_split_manifest_sha256": "81d9403a5ecd39fb5c4cf7ac8ffd3c79505a9583d683a960cf5a02b6da1fe8f2",
+  "split_unit": "town_route",
+  "expansion_policy": {
+    "frozen_validation_route_groups": "validation",
+    "frozen_test_route_groups": "test",
+    "frozen_train_route_groups": "train",
+    "unassigned_route_groups": "train"
+  }
+}

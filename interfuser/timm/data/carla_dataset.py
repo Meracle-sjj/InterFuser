@@ -1,3 +1,10 @@
+"""
+[INPUT]: 依赖 CARLA route sequence 目录、测量/参与者标签、RGB/LiDAR 文件与可选显式 dataset index。
+[OUTPUT]: 对外提供 CarlaMVDetDataset、LiDAR 直方图编码与坐标变换，生成 InterFuser 多任务训练样本。
+[POS]: timm.data 的 CARLA 下游数据适配层；只解析契约选中的 sequence，不自行决定 train/validation 归属。
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+"""
+
 import os
 import copy
 import re
@@ -93,6 +100,7 @@ class CarlaMVDetDataset(BaseIODataset):
         with_lidar=False,
         multi_view=False,
         augment_prob=0.0,
+        dataset_index=None,
     ):
         super().__init__()
 
@@ -125,7 +133,10 @@ class CarlaMVDetDataset(BaseIODataset):
             'warned': False  # Only warn once
         }
 
-        dataset_indexs = self._load_text(os.path.join(root, 'dataset_index.txt')).split('\n')
+        dataset_index_path = dataset_index or os.path.join(root, "dataset_index.txt")
+        if not os.path.isabs(dataset_index_path):
+            dataset_index_path = os.path.join(root, dataset_index_path)
+        dataset_indexs = self._load_text(dataset_index_path).split("\n")
         
         for line in dataset_indexs:
             line = line.strip()

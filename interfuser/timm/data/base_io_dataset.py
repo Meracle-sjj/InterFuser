@@ -1,3 +1,10 @@
+"""
+[INPUT]: 依赖本地文本、JSON、图像与 NumPy 样本文件，并接受数据集根路径。
+[OUTPUT]: 对外提供 BaseIODataset，统一封装文本/图像/JSON/NumPy 读取与历史帧回退。
+[POS]: timm.data 的底层本地 I/O 边界，被 CARLA dataset 复用，不参与划分或标签决策。
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+"""
+
 import io
 import json
 import os
@@ -15,8 +22,8 @@ class BaseIODataset(torch.utils.data.Dataset):
         self.root_path = root
 
     def _load_text(self, path):
-        text = open(self.root_path + path, 'r').read()
-        return text
+        with open(self.root_path + path, "r") as stream:
+            return stream.read()
 
     def _load_image(self, path):
         try:
@@ -48,12 +55,14 @@ class BaseIODataset(torch.utils.data.Dataset):
 
     def _load_json(self, path):
         try:
-            json_value = json.load(open(self.root_path + path))
+            with open(self.root_path + path) as stream:
+                json_value = json.load(stream)
         except Exception as e:
             _logger.info(path)
             n = path[-9:-5]
             new_path = path[:-9] + "%04d.json" % (int(n) - 1)
-            json_value = json.load(open(self.root_path + new_path))
+            with open(self.root_path + new_path) as stream:
+                json_value = json.load(stream)
         return json_value
 
     def _load_npy(self, path):

@@ -11,5 +11,7 @@ semantic_pretraining_smoke_v1.json: M2 首次训练链路配置，固定同构 R
 semantic_pretraining_pilot_v1.json: M2 数据量学习曲线配置，固定嵌套 25%/50%/100% train 样本数、完整 validation、单 epoch 预算与统一初始化/GPU 契约。
 semantic_pretraining_optimization_probe_v1.json: M2 优化充分性诊断配置，固定 100% train、完整 validation、5 epoch 无类别权重预算和 best-mIoU checkpoint 选择。
 semantic_pretraining_class_weight_probe_v1.json: M2 类别失衡诊断配置，仅在同一五轮全量预算中加入由无权重 train 像素支持派生的 inverse-sqrt 显式权重。
+interfuser_downstream_split_v1.json: M2 H1 下游划分配置，将 M1 冻结 Town+route holdout 扩展到全量 dataset_index，未见 route group 仅进 train。
+interfuser_visual_initialization_v1.json: M2 H1 初始化配置，冻结 InterFuser/ResNet 代码哈希、ImageNet B0 与交通域 V 权重及唯一 RGB 变量不变式。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

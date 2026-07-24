@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "protocol_document": "docs/interfuser_visual_transfer_protocol_v1.md",
+  "model": {
+    "name": "interfuser_baseline",
+    "model_definition": "interfuser/timm/models/interfuser.py",
+    "model_definition_sha256": "4f62c726147ee51c198e88195e1ec7048e711e9124f2d1e42f936b7a96049c4f",
+    "resnet_definition": "interfuser/timm/models/resnet.py",
+    "resnet_definition_sha256": "017a732757bdad519d17860475cd83def1eb7dcfbf5baba160409439c06ef93a"
+  },
+  "b0_rgb_initialization": {
+    "source": "timm_imagenet_resnet50d_ra2",
+    "checkpoint": "/home/shijj/.cache/torch/hub/checkpoints/resnet50d_ra2-464e36ba.pth",
+    "checkpoint_sha256": "464e36baa940a80971e717454e61e8f6fc1a1b284b7a3dbb6f6fd4c3da78533d"
+  },
+  "v_rgb_initialization": {
+    "source": "m2_semantic_class_weight_probe_v1_best_epoch4",
+    "checkpoint": "results/thesis_m2/m2-semantic-class-weight-probe-v1-full-invsqrt-seed20260723/backbone_resnet50d.pth",
+    "checkpoint_sha256": "17aac98fcb3b513a672de6edd68ca4e697157fdfb285c4cc9cbfb1151bb8298e",
+    "architecture": "resnet50d",
+    "source_training_config_sha256": "36e03d89bbe55c2fda05a5c26ee12c7d2692bea4b7bd2018cf4af40700e01249"
+  },
+  "pair_invariant": {
+    "only_changed_module": "rgb_backbone",
+    "expected_unique_rgb_tensors": 330,
+    "expected_full_model_rgb_alias_tensors": 660,
+    "strict_full_model_checkpoint_load": true
+  },
+  "seed": 20260723,
+  "require_clean_git": true,
+  "result_root": "results/thesis_m2"
+}

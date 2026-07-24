@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-""" ImageNet Training Script
+"""
+[INPUT]: 依赖 timm 模型/优化器 API、CARLA 下游数据集、版本化初始 checkpoint 与可选独立 train/validation index。
+[OUTPUT]: 对外提供 InterFuser 单机/分布式训练 CLI，生成逐 epoch 指标、TensorBoard 事件与 strict-loadable checkpoint。
+[POS]: interfuser 的下游训练入口；模型结构由 timm.models 提供，数据划分由显式 index 契约控制。
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+
+ImageNet Training Script
 
 This is intended to be a lean and easily modifiable ImageNet training script that reproduces ImageNet
 training results with some of the latest networks and training techniques. It favours canonical PyTorch
@@ -140,6 +146,20 @@ parser.add_argument(
     nargs="+",
     default=[1],
     help="dataset validation weathers (default: [1])",
+)
+parser.add_argument(
+    "--train-dataset-index",
+    default=None,
+    type=str,
+    metavar="PATH",
+    help="optional dataset index used only for the CARLA training split",
+)
+parser.add_argument(
+    "--val-dataset-index",
+    default=None,
+    type=str,
+    metavar="PATH",
+    help="optional dataset index used only for the CARLA validation split",
 )
 parser.add_argument(
     "--saver-decreasing",
@@ -1098,7 +1118,8 @@ def main():
             with_seg=args.with_seg,
             with_depth=args.with_depth,
             multi_view=args.multi_view,
-            augment_prob=args.augment_prob
+            augment_prob=args.augment_prob,
+            dataset_index=args.train_dataset_index,
         )
         dataset_eval = create_carla_dataset(
             args.dataset,
@@ -1110,7 +1131,8 @@ def main():
             with_seg=args.with_seg,
             with_depth=args.with_depth,
             multi_view=args.multi_view,
-            augment_prob=args.augment_prob
+            augment_prob=args.augment_prob,
+            dataset_index=args.val_dataset_index,
         )
     else:
         dataset_train = create_dataset(

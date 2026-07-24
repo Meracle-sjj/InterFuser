@@ -82,6 +82,8 @@ test 配置在 formal 结果完成前预注册，SHA-256 为 `429fb5722754bb5ab7
 
 D7 主指标为 Driving Score，Route Completion 与 Infraction Score 为共同报告的诊断指标。每个 variant 先在同 route 内对三个 seed 求均值，再对七条 route 做宏平均；配对差值始终定义为 `V - B0`，并同时报告 21 个 route×seed 差值、七个 route 均值差、三个 seed 宏平均差、均值、标准差、最小值与最大值。样本量只支持描述性 v1 结论，不用事后选择显著性检验或声称超出冻结 D7 的总体泛化。
 
+最终只允许 `tools/evaluation/summarize_interfuser_visual_d7.py` 从两组原始 run manifest 生成 H1 汇总。该工具必须分别复用 M0 汇总门禁验证两组 21/21，再校验两份配置除 checkpoint path/hash/epoch 与对应 variant provenance 外逐字段相同；手工表格或只比较两个宏平均值不能作为论文权威结果。
+
 离线方向性主指标预先固定为 traffic AP、traffic ROC-AUC、occupied IoU、waypoint ADE、horizon-10 FDE，其中前三项越高越好、后两项越低越好；五项至少三项改善定义为“离线多数支持 V”。连续帧 residual 与二分类 macro-F1 用于机制和失败分析，不参与多数票，避免以大量相关指标重复计票。H1 v1 结论分为：
 
 - **支持**：D7 macro Driving Score 的 `V-B0 > 0`，且离线五项至少三项改善；

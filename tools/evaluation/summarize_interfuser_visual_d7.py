@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 [INPUT]: 依赖正式 B0/V 各自完整 D7 run_manifest、baseline_eval_config 快照，以及两份配置共同绑定的 pipeline-valid 冻结 test/formal manifest。
-[OUTPUT]: 对外提供 PairedSummaryError、build_paired_summary、write_paired_summary 与 CLI，生成 V-B0 的 21 attempt/route/seed 配对差值和预注册 H1 判定。
+[OUTPUT]: 对外提供 PairedSummaryError、normalize_d7_config_for_pair、build_paired_summary、write_paired_summary 与 CLI，生成 V-B0 的 21 attempt/route/seed 配对差值和预注册 H1 判定。
 [POS]: tools/evaluation 的 M2 H1 最终纯离线归约器；复用 M0 单组汇总门禁，只放行 checkpoint/provenance 差异，不启动 CARLA 或读取训练数据。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -164,7 +164,8 @@ def _comparison_contract(record, repo_root):
     }
 
 
-def _normalized_config(config):
+def normalize_d7_config_for_pair(config):
+    """Mask only the variant fields allowed to differ in a D7 pair."""
     normalized = copy.deepcopy(config)
     checkpoint = normalized.get("checkpoint") or {}
     for field in ("path", "sha256", "epoch", "best_metric"):
@@ -190,7 +191,9 @@ def _validate_pair_contract(b0, v, repo_root):
     ):
         if b0_provenance[field] != v_provenance[field]:
             raise PairedSummaryError(f"B0/V provenance differs in {field}")
-    if _normalized_config(b0["config"]) != _normalized_config(v["config"]):
+    if normalize_d7_config_for_pair(b0["config"]) != normalize_d7_config_for_pair(
+        v["config"]
+    ):
         raise PairedSummaryError(
             "B0/V D7 configs differ outside checkpoint/provenance fields"
         )

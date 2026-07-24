@@ -86,6 +86,7 @@ class InterfuserVisualPairTests(unittest.TestCase):
                 "pair_invariant": {
                     "expected_unique_rgb_tensors": 2,
                     "expected_full_model_rgb_alias_tensors": 4,
+                    "expected_imagenet_dtype_normalized_buffers": 0,
                 },
                 "seed": 7,
                 "require_clean_git": False,
@@ -142,6 +143,23 @@ class InterfuserVisualPairTests(unittest.TestCase):
             }
             with self.assertRaisesRegex(visual_pair.VisualPairError, "non-backbone"):
                 visual_pair._load_v_rgb_state(path, contract)
+
+    def test_imagenet_equivalence_only_normalizes_batch_counter_dtype(self):
+        actual = {
+            "weight": torch.tensor([1.0], dtype=torch.float32),
+            "bn.num_batches_tracked": torch.tensor(7, dtype=torch.int64),
+        }
+        source = {
+            "weight": torch.tensor([1.0], dtype=torch.float32),
+            "bn.num_batches_tracked": torch.tensor(7.0, dtype=torch.float32),
+        }
+        self.assertEqual(
+            visual_pair._assert_imagenet_load_equivalent(actual, source),
+            ["bn.num_batches_tracked"],
+        )
+        source["weight"] = torch.tensor([1], dtype=torch.int64)
+        with self.assertRaisesRegex(visual_pair.VisualPairError, "tensor mismatch"):
+            visual_pair._assert_imagenet_load_equivalent(actual, source)
 
 
 if __name__ == "__main__":

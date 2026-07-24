@@ -25,6 +25,7 @@
     "only_changed_module": "rgb_backbone",
     "expected_unique_rgb_tensors": 330,
     "expected_full_model_rgb_alias_tensors": 660,
+    "expected_imagenet_dtype_normalized_buffers": 55,
     "strict_full_model_checkpoint_load": true
   },
   "seed": 20260723,

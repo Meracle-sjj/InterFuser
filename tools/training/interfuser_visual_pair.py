@@ -109,6 +109,7 @@ def load_visual_pair_contract(path):
         "only_changed_module": "rgb_backbone",
         "expected_unique_rgb_tensors": 330,
         "expected_full_model_rgb_alias_tensors": 660,
+        "expected_imagenet_dtype_normalized_buffers": 55,
         "strict_full_model_checkpoint_load": True,
     }
     if invariant != expected_invariant:
@@ -222,6 +223,31 @@ def _assert_tensor_state_equal(actual, expected, label):
         raise VisualPairError(f"{label} tensor mismatch: {mismatches[:5]}")
 
 
+def _assert_imagenet_load_equivalent(actual, source):
+    """Match PyTorch strict-load semantics while exposing BN counter dtype casts."""
+    if list(actual) != list(source):
+        raise VisualPairError("B0 ImageNet RGB keys differ")
+    normalized = []
+    mismatches = []
+    for key in actual:
+        target = actual[key].detach().cpu()
+        value = source[key].detach().cpu()
+        if target.shape != value.shape:
+            mismatches.append(key)
+            continue
+        if target.dtype != value.dtype:
+            if not key.endswith("num_batches_tracked"):
+                mismatches.append(key)
+                continue
+            normalized.append(key)
+            value = value.to(dtype=target.dtype)
+        if not torch.equal(target, value):
+            mismatches.append(key)
+    if mismatches:
+        raise VisualPairError(f"B0 ImageNet RGB tensor mismatch: {mismatches[:5]}")
+    return normalized
+
+
 def _save_initial_checkpoint(path, model_name, variant, state_dict, provenance):
     torch.save(
         {
@@ -281,9 +307,17 @@ def prepare_visual_initialization_pair(config_path, run_id, result_root=None):
         imagenet_rgb = _load_imagenet_rgb_state(
             contract["resolved"]["b0_rgb_initialization"]
         )
-        _assert_tensor_state_equal(b0_rgb, imagenet_rgb, "B0 ImageNet RGB")
+        normalized_imagenet_buffers = _assert_imagenet_load_equivalent(
+            b0_rgb, imagenet_rgb
+        )
         if len(b0_rgb) != contract["pair_invariant"]["expected_unique_rgb_tensors"]:
             raise VisualPairError("B0 RGB tensor count differs from the contract")
+        if len(normalized_imagenet_buffers) != contract["pair_invariant"].get(
+            "expected_imagenet_dtype_normalized_buffers", 0
+        ):
+            raise VisualPairError(
+                "ImageNet dtype-normalized buffer count differs from the contract"
+            )
 
         b0_path = run_dir / "b0_initial_checkpoint.pth"
         b0_provenance = {
@@ -353,6 +387,10 @@ def prepare_visual_initialization_pair(config_path, run_id, result_root=None):
                     "unique_rgb_tensors": len(b0_rgb),
                     "changed_unique_rgb_tensors": changed_unique,
                     "changed_full_model_alias_tensors": len(changed_keys),
+                    "imagenet_dtype_normalized_buffers": len(
+                        normalized_imagenet_buffers
+                    ),
+                    "imagenet_dtype_normalized_buffer_names": normalized_imagenet_buffers,
                     "non_rgb_state_sha256": b0_non_rgb_hash,
                     "strict_full_checkpoint_load": True,
                 },

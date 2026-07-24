@@ -32,7 +32,7 @@ validation 只用于训练选择，test 才是 H1 离线结论的权威集。任
 ## 3. 基础设施完成门槛
 
 1. 全量下游索引 manifest 证明 train/validation/test 无 route-group 重叠且记录数守恒；
-2. B0 RGB 状态与冻结 ImageNet checkpoint 逐张量相同；
+2. B0 RGB 状态与冻结 ImageNet checkpoint 按 PyTorch strict-load 语义等价；原文件中 55 个 BatchNorm `num_batches_tracked` 从 float32 规范化为目标 int64，其他键/形状/dtype/数值必须严格一致；
 3. V 导出 330 个张量 strict-load 到 RGB backbone；
 4. 全模型的 660 个 RGB alias state key 变化，其余 state key 内容哈希完全相同；
 5. B0/V 初始 checkpoint 都能被 `interfuser_baseline` strict load；

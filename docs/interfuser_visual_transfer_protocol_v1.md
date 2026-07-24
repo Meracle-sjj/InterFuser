@@ -2,12 +2,14 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 状态 | **INFRASTRUCTURE-PENDING：无泄漏下游索引与 B0/V 初始化契约待真实运行** |
+| 状态 | **SMOKE-PENDING：无泄漏索引与 B0/V strict 初始化对已验证，配对训练 smoke 待运行** |
 | 服务假设 | H1：交通域 ResNet-50 初始化优于通用 ImageNet 初始化 |
 | 数据配置 | `configs/thesis/interfuser_downstream_split_v1.json` |
 | 初始化配置 | `configs/thesis/interfuser_visual_initialization_v1.json` |
+| 配对 smoke 配置 | `configs/thesis/interfuser_visual_pair_smoke_v1.json` |
 | 索引构建器 | `tools/data/build_interfuser_downstream_indexes.py` |
 | 初始化生成器 | `tools/training/interfuser_visual_pair.py` |
+| 配对训练 runner | `tools/training/run_interfuser_visual_pair.py` |
 
 ## 1. 单变量边界
 
@@ -41,5 +43,13 @@ validation 只用于训练选择，test 才是 H1 离线结论的权威集。任
 ## 4. 证据边界
 
 本协议的基础设施只证明“对照可归因”，不证明 V 已优于 B0。必须依次完成配对训练 smoke、正式训练、冻结 test 离线评价与 D7 三种子闭环评测，才能判定 H1。
+
+已验证输入为下游 split manifest `711a70dcfffd7da9e49d68a71ef83f4ee3f1dc8a49d0b41c6d06f7b3d3bb4f70` 与初始化 run `m2-interfuser-visual-init-pair-v1-seed20260723-v3`（manifest `50ad2018a2c015829e99c56e8f7493ba87e1e7e7781345a8bc47ddf4250a99e5`）。前者覆盖 9,968 个 sequence 且 train/validation/test route group 两两无交集；后者证明 330 个唯一 RGB 张量变化、全部 660 个 RGB alias 变化、非 RGB state 哈希一致且两个全模型 checkpoint 均可 strict load。
+
+## 5. 配对训练 smoke 契约
+
+smoke 从已冻结全量 train/validation index 中用 seed `20260724` 分别抽取 2 个完整 sequence，仅用于验证多视角 RGB、LiDAR、多任务 loss、分布式反向、验证、checkpoint 与资源回收链路。B0 和 V 按固定顺序在 GPU 6/7 串行运行，共享单 epoch、每 GPU batch 2、AdamW/cosine 和 seed `20260723`；只有 `initial_checkpoint`、experiment 名和输出目录允许不同。
+
+runner 必须拒绝已有 GPU compute owner、分布式端口占用、Git 脏工作树、索引/初始化哈希漂移、非零进程退出、超时、缺失/非有限 summary 或 checkpoint 结构变化。任一 variant invalid 立即停止准入。smoke 指标不进入 H1 效果结论。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

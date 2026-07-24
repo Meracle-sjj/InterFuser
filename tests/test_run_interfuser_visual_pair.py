@@ -1,11 +1,12 @@
 """
 [INPUT]: 依赖 run_interfuser_visual_pair 的 smoke 索引抽样、训练命令、summary 与 args 可比性 API。
-[OUTPUT]: 验证 B0/V 命令共享同一训练参数、smoke 抽样确定性、允许的 provenance 字段被归一且真实预算漂移可见。
+[OUTPUT]: 验证 B0/V 命令共享同一训练参数、smoke 抽样确定性、formal test index 强制绑定、允许的 provenance 字段被归一且真实预算漂移可见。
 [POS]: tests 的 M2 H1 配对训练编排回归，不启动 GPU 或外部训练进程。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
 import csv
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,6 +19,8 @@ from tools.training.run_interfuser_visual_pair import (
     _parse_summary,
     _write_smoke_index,
     build_training_command,
+    load_pair_run_contract,
+    sha256_file,
 )
 
 
@@ -120,6 +123,63 @@ class RunInterfuserVisualPairTests(unittest.TestCase):
             changed_hash, _ = _normalized_args_hash(second)
 
         self.assertNotEqual(first_hash, changed_hash)
+
+    def test_formal_contract_requires_frozen_test_index(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            train = root / "train.txt"
+            validation = root / "validation.txt"
+            test = root / "test.txt"
+            for path in (train, validation, test):
+                path.write_text("sequence 1\n", encoding="utf-8")
+            split_manifest = root / "split.json"
+            split_manifest.write_text(
+                json.dumps(
+                    {
+                        "valid": True,
+                        "artifacts": {
+                            name: {"sha256": sha256_file(path)}
+                            for name, path in (
+                                ("train", train),
+                                ("validation", validation),
+                                ("test", test),
+                            )
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            initialization_manifest = root / "initialization.json"
+            initialization_manifest.write_text(
+                json.dumps({"pipeline_valid": True}), encoding="utf-8"
+            )
+            config = root / "formal.json"
+            config.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "status": "formal",
+                        "downstream_split_manifest": str(split_manifest),
+                        "downstream_split_manifest_sha256": sha256_file(split_manifest),
+                        "initialization_manifest": str(initialization_manifest),
+                        "initialization_manifest_sha256": sha256_file(
+                            initialization_manifest
+                        ),
+                        "dataset": {
+                            "root": str(root),
+                            "train_index": str(train),
+                            "train_index_sha256": sha256_file(train),
+                            "validation_index": str(validation),
+                            "validation_index_sha256": sha256_file(validation),
+                            "towns": [1],
+                            "weathers": [0],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(PairRunError, "dataset.test_index"):
+                load_pair_run_contract(config)
 
     def test_summary_requires_complete_finite_epoch_rows(self):
         with tempfile.TemporaryDirectory() as root:

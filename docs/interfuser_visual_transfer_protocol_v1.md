@@ -2,11 +2,12 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 状态 | **SMOKE-PENDING：无泄漏索引与 B0/V strict 初始化对已验证，配对训练 smoke 待运行** |
+| 状态 | **FORMAL-PENDING：B0/V 配对 smoke 已有效完成，正式训练契约待执行** |
 | 服务假设 | H1：交通域 ResNet-50 初始化优于通用 ImageNet 初始化 |
 | 数据配置 | `configs/thesis/interfuser_downstream_split_v1.json` |
 | 初始化配置 | `configs/thesis/interfuser_visual_initialization_v1.json` |
 | 配对 smoke 配置 | `configs/thesis/interfuser_visual_pair_smoke_v1.json` |
+| 配对正式配置 | `configs/thesis/interfuser_visual_pair_formal_v1.json` |
 | 索引构建器 | `tools/data/build_interfuser_downstream_indexes.py` |
 | 初始化生成器 | `tools/training/interfuser_visual_pair.py` |
 | 配对训练 runner | `tools/training/run_interfuser_visual_pair.py` |
@@ -51,5 +52,15 @@ validation 只用于训练选择，test 才是 H1 离线结论的权威集。任
 smoke 从已冻结全量 train/validation index 中用 seed `20260724` 分别抽取 2 个完整 sequence，仅用于验证多视角 RGB、LiDAR、多任务 loss、分布式反向、验证、checkpoint 与资源回收链路。B0 和 V 按固定顺序在 GPU 6/7 串行运行，共享单 epoch、每 GPU batch 2、AdamW/cosine 和 seed `20260723`；只有 `initial_checkpoint`、experiment 名和输出目录允许不同。
 
 runner 必须拒绝已有 GPU compute owner、分布式端口占用、Git 脏工作树、索引/初始化哈希漂移、非零进程退出、超时、缺失/非有限 summary 或 checkpoint 结构变化。任一 variant invalid 立即停止准入。smoke 指标不进入 H1 效果结论。
+
+有效 smoke 为 `m2-interfuser-visual-pair-smoke-v1-seed20260723-20260724-v1`（运行 Git `65f3946d35dc08ad9b378a3b5220ebe1fe081ad6`，manifest `8f2b44f25f116daf12021695cbf0a77555e256f347c2733c4384e807114c1018`）。B0/V 均完成 1 epoch、两进程反向与验证，归一训练参数哈希一致，产出相同的 1,132 张量 schema，退出后 GPU 6/7、端口 29655 和进程组全部释放。
+
+## 6. 正式训练契约
+
+正式预算复用上游 `README.md:157-168` 与 `interfuser/scripts/train.sh` 的 2 GPU 配方：每 GPU batch 16、25 epochs、5 warmup epochs、AdamW、cosine、主学习率 `5e-4`、骨干学习率 `2e-4`、weight decay `0.05`、scale `0.9..1.1`，并显式冻结 `train.py` 默认 color jitter `0.1` 与 log interval `50`。B0/V 共用 seed `20260723` 并按 B0 后 V 串行；唯一变量仍是初始视觉骨干。
+
+formal 配置必须同时绑定 train、validation 与从未参与模型选择的 test index。validation 选择 best checkpoint；test 只在两个正式训练完成后由独立离线 evaluator 一次性评估。后续 D7 必须分别评测本配对训练产出的 B0/V checkpoint，M0 原始 checkpoint 只作为基线校准证据，不替代正式配对 B0。
+
+正式配置 SHA-256 为 `bc77afd5cbc0656d935c70fa15d21509474d533b6668d4c7f0f96a6f1a0c1738`；首次且唯一准入 Run ID 冻结为 `m2-interfuser-visual-pair-formal-v1-seed20260723-20260724-v1`。runner 拒绝覆盖同名目录，后续监控只能续查该产物，不得重复启动。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

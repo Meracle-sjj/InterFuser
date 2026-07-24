@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-[INPUT]: 依赖版本化 B0/V 训练配置、无泄漏下游索引、strict 初始 checkpoint 对、InterFuser train.py 与 GPU/端口资源守卫。
+[INPUT]: 依赖版本化 B0/V 训练配置、无泄漏下游 train/validation/test 索引、strict 初始 checkpoint 对、InterFuser train.py 与 GPU/端口资源守卫。
 [OUTPUT]: 对外提供 PairRunError、load_pair_run_contract、build_training_command、execute_pair_run 与 CLI，串行生成 B0/V 训练产物、指标和配对 manifest。
 [POS]: tools/training 的 M2 H1 下游训练编排器；复用上游 train.py 而不重写训练循环，任一 variant 基础设施失败即停止配对准入。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -140,7 +140,12 @@ def load_pair_run_contract(path):
     resolved["dataset_root"] = _resolve_path(dataset.get("root"), "dataset.root").resolve()
     if not resolved["dataset_root"].is_dir():
         raise PairRunError("dataset.root is not a directory")
-    for split in ("train", "validation"):
+    contract_splits = (
+        ("train", "validation", "test")
+        if raw["status"] == "formal"
+        else ("train", "validation")
+    )
+    for split in contract_splits:
         field = f"{split}_index"
         resolved[field] = _resolve_path(dataset.get(field), f"dataset.{field}").resolve()
         _verify_hash(resolved[field], dataset.get(f"{field}_sha256"), field)
@@ -202,6 +207,7 @@ def load_pair_run_contract(path):
             f"training.{field}",
             allow_zero=field in {"seed", "workers_per_process", "warmup_epochs", "cooldown_epochs"},
         )
+    _positive_int(training.get("log_interval", 1), "training.log_interval")
     if training.get("optimizer") != "adamw" or training.get("scheduler") != "cosine":
         raise PairRunError("training optimizer/scheduler must be adamw/cosine")
     for field in (
@@ -347,7 +353,7 @@ def _shared_training_args(contract, train_index, validation_index):
         "--checkpoint-hist",
         "1",
         "--log-interval",
-        "1",
+        str(training.get("log_interval", 1)),
     ]
     return args
 

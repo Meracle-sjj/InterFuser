@@ -16,6 +16,7 @@ CLAUDE.md: 实验事实记录模块地图，约束摘要只能引用已完成 ru
 2026-07-23-m2-semantic-learning-curve-v1.md: M2 三点数据量 pilot，固化嵌套 25%/50%/100% train、完整 validation、逐类指标、产物哈希与优化/数据边界结论。
 2026-07-23-m2-semantic-optimization-probe-v1.md: M2 五轮无权重优化充分性 probe，固化逐轮/逐类指标、best checkpoint、产物哈希与类别权重准入结论。
 2026-07-23-m2-semantic-class-weight-probe-v1.md: M2 inverse-sqrt 类别权重 probe，固化配对预算、逐类收益/代价、best 骨干哈希与暂不补采的证据边界。
+2026-07-24-m2-interfuser-visual-pair-smoke-v1.md: M2 H1 下游 B0/V 配对 smoke，固化单变量参数、两组有效训练、checkpoint schema 和资源释放证据。
 
 记录只陈述事实和结论边界；实验协议归 `../baseline_evaluation_protocol_v1.md`，大体积原始结果归远端 `results/`。
 

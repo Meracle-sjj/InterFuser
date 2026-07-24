@@ -28,6 +28,7 @@ configs/thesis/semantic_pretraining_class_weight_probe_v1.json - M2 类别失衡
 configs/thesis/interfuser_downstream_split_v1.json - M2 H1 下游无泄漏 Town+route 全量索引投影契约
 configs/thesis/interfuser_visual_initialization_v1.json - M2 H1 B0/V 单变量视觉初始化与代码/权重哈希契约
 configs/thesis/interfuser_visual_pair_smoke_v1.json - M2 H1 B0/V 配对下游训练链路 smoke 预算、资源和产物契约
+configs/thesis/interfuser_visual_pair_formal_v1.json - M2 H1 B0/V 正式下游训练预算、无泄漏三分索引和资源契约
 README.md - InterFuser 上游安装、数据生成、训练与评测说明
 requirements.txt - 上游 Python 依赖基线；实际实验以固定 conda 环境为准
 setup_carla.sh - 上游 CARLA 安装脚本；当前服务器实际运行 CARLA 0.9.16

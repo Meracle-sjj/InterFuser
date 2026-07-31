@@ -305,6 +305,9 @@ def _validated_dynamic_inputs(contract):
 
 def _child_config(contract, dynamic, variant):
     config = copy.deepcopy(contract["baseline"])
+    # D7 child 用 build config 显式 code_anchor (D7 实际 runtime commit); 未指定则继承 baseline (M0 anchor)
+    if "code_anchor" in contract["raw"]:
+        config["code_anchor"] = contract["raw"]["code_anchor"]
     config["result_root"] = contract["raw"]["result_root"]
     checkpoint = dynamic["variants"][variant]
     config["checkpoint"] = {

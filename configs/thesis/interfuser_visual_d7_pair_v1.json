@@ -1,0 +1,22 @@
+{
+  "build_contract": "configs/thesis/interfuser_visual_d7_build_v1.json",
+  "build_contract_sha256": "c78f0e5d0dd8e2ac6cc98605e0290ba9b7b88812d4dac33935a83f1ec61d9633",
+  "pair_run_id": "m2-interfuser-visual-d7-pair-seeds0-2-20260724-v1",
+  "result_root": "results/thesis_m2",
+  "schema_version": 1,
+  "status": "preregistered",
+  "variants": {
+    "b0": {
+      "config": "configs/thesis/interfuser_visual_d7_b0_v1.json",
+      "config_sha256": "b3633a0594b87045560dfeb523d573562208557a89cf129bb8d89e419ed3e2b6",
+      "run_id": "m2-interfuser-visual-d7-b0-seeds0-2-20260724-v1"
+    },
+    "v": {
+      "config": "configs/thesis/interfuser_visual_d7_v_v1.json",
+      "config_sha256": "79f58cfc4c81b127d369a5d992ffb6090db91b9c1148c6fcc825b3ec69d64868",
+      "run_id": "m2-interfuser-visual-d7-v-seeds0-2-20260724-v1"
+    }
+  },
+  "visual_test_manifest": "results/thesis_m2/m2-interfuser-visual-pair-test-v1-seed20260724-20260724-v1/test_manifest.json",
+  "visual_test_manifest_sha256": "51ae8d1d99d976f83465b56681e448437062a3efc20b70dbb9aa2d6fea46bdf3"
+}

@@ -11,8 +11,20 @@
   "visual_test_config_sha256": "429fb5722754bb5ab7d7f2172bfb6aaed940706b0b50933e98beb5827d2c15ee",
   "visual_test_run_id": "m2-interfuser-visual-pair-test-v1-seed20260724-20260724-v1",
   "visual_test_manifest": "results/thesis_m2/m2-interfuser-visual-pair-test-v1-seed20260724-20260724-v1/test_manifest.json",
-  "route_order": [18, 6, 12, 30, 36, 39, 0],
-  "seeds": [0, 1, 2],
+  "route_order": [
+    18,
+    6,
+    12,
+    30,
+    36,
+    39,
+    0
+  ],
+  "seeds": [
+    0,
+    1,
+    2
+  ],
   "result_root": "results/thesis_m2",
   "run_ids": {
     "pair": "m2-interfuser-visual-d7-pair-seeds0-2-20260724-v1",
@@ -23,5 +35,6 @@
     "b0": "configs/thesis/interfuser_visual_d7_b0_v1.json",
     "v": "configs/thesis/interfuser_visual_d7_v_v1.json",
     "pair": "configs/thesis/interfuser_visual_d7_pair_v1.json"
-  }
+  },
+  "code_anchor": "381bc223ed21b6ed74440820c1a80d02d97d8f5d"
 }

@@ -634,11 +634,15 @@ def _metric_delta(b0, v):
     def value_at(root, path):
         value = root
         for field in path:
+            if not isinstance(value, dict) or field not in value:
+                return None
             value = value[field]
         return float(value)
 
     return {
-        name: value_at(v, path) - value_at(b0, path) for name, path in paths.items()
+        name: None if (value_at(v, path) is None or value_at(b0, path) is None)
+        else value_at(v, path) - value_at(b0, path)
+        for name, path in paths.items()
     }
 
 

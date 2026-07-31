@@ -303,8 +303,15 @@ class InterfuserMetricAccumulator:
         }
         for name, (_, _, class_names) in self.CLASS_HEADS.items():
             targets = np.concatenate(self._class_targets[name])
-            if not np.all(np.bincount(targets, minlength=2) > 0):
-                raise MetricError(f"{name} requires both classes in frozen test")
+            counts = np.bincount(targets, minlength=2)
+            if not np.all(counts > 0):
+                metrics[name] = {
+                    "insufficient_data": True,
+                    "class_counts": counts.tolist(),
+                    "class_names": list(class_names),
+                    "reason": f"{name} frozen test 缺少一类样本, 无法计算混淆矩阵",
+                }
+                continue
             metrics[name] = binary_confusion_metrics(
                 targets, np.concatenate(self._class_predictions[name]), class_names
             )

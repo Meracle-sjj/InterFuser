@@ -88,6 +88,33 @@ class InterfuserOfflineMetricsTests(unittest.TestCase):
         self.assertEqual(metrics["red_light"]["accuracy"], 0.0)
         self.assertEqual(metrics["stop_sign"]["accuracy"], 1.0)
 
+    def test_binary_head_missing_one_class_marked_insufficient_not_failed(self):
+        """protocol §7: 二分类缺一类是数据评价基础设施不足, 不得写成模型失败; 跳过该 head 并标注."""
+        outputs, targets = self._batch()
+        targets = list(targets)
+        targets[6] = np.array([0, 0], dtype=np.int64)
+        accumulator = InterfuserMetricAccumulator()
+        accumulator.update(outputs, tuple(targets))
+        metrics = accumulator.finalize()
+        self.assertTrue(metrics["stop_sign"].get("insufficient_data"))
+        self.assertEqual(metrics["stop_sign"]["class_counts"], [2, 0])
+        self.assertIn("accuracy", metrics["junction"])
+        self.assertIn("accuracy", metrics["red_light"])
+
+
+    def test_metric_delta_skips_insufficient_binary_head(self):
+        """_metric_delta 遇到 insufficient_data 的二分类 head 应返回 None, 不 KeyError."""
+        from tools.evaluation.run_interfuser_visual_test import _metric_delta
+        outputs, targets = self._batch()
+        b0 = InterfuserMetricAccumulator(); b0.update(outputs, targets); b0_m = b0.finalize()
+        v = InterfuserMetricAccumulator(); v.update(outputs, targets); v_m = v.finalize()
+        insufficient = {"insufficient_data": True, "class_counts": [2, 0], "class_names": ["absent", "present"]}
+        b0_m["stop_sign"] = insufficient
+        v_m["stop_sign"] = insufficient
+        delta = _metric_delta(b0_m, v_m)
+        self.assertIsNone(delta["stop_sign_macro_f1"])
+
+
     def test_accumulator_rejects_a_waypoint_horizon_without_support(self):
         outputs, targets = self._batch()
         targets = list(targets)

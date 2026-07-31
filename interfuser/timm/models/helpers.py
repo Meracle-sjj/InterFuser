@@ -28,7 +28,7 @@ _logger = logging.getLogger(__name__)
 
 def load_state_dict(checkpoint_path, use_ema=False):
     if checkpoint_path and os.path.isfile(checkpoint_path):
-        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
         state_dict_key = "state_dict"
         if isinstance(checkpoint, dict):
             if use_ema and "state_dict_ema" in checkpoint:

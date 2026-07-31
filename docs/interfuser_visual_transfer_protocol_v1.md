@@ -2,7 +2,7 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 状态 | **FORMAL-RUNNING：B0/V 配对正式训练执行中，冻结 test 指标已预注册但禁止运行** |
+| 状态 | **TEST-COMPLETED：冻结 test pipeline_valid（B0/V 双 variant 通过，离线 4/5 支持 V），D7 配对闭环待执行** |
 | 服务假设 | H1：交通域 ResNet-50 初始化优于通用 ImageNet 初始化 |
 | 数据配置 | `configs/thesis/interfuser_downstream_split_v1.json` |
 | 初始化配置 | `configs/thesis/interfuser_visual_initialization_v1.json` |

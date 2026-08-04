@@ -30,6 +30,7 @@ configs/thesis/interfuser_downstream_split_v1.json - M2 H1 下游无泄漏 Town+
 configs/thesis/interfuser_visual_initialization_v1.json - M2 H1 B0/V 单变量视觉初始化与代码/权重哈希契约
 configs/thesis/interfuser_visual_initialization_pedestrian_hazard_v1.json - M2 H1 行人危险骨干的 B0/V 单变量严格迁移契约
 configs/thesis/interfuser_visual_pair_smoke_v1.json - M2 H1 B0/V 配对下游训练链路 smoke 预算、资源和产物契约
+configs/thesis/interfuser_visual_pair_pedestrian_hazard_smoke_v1.json - M2 H1 行人危险骨干 B0/V 配对下游 smoke 契约
 configs/thesis/interfuser_visual_pair_formal_v1.json - M2 H1 B0/V 正式下游训练预算、无泄漏三分索引和资源契约
 configs/thesis/interfuser_visual_pair_test_v1.json - M2 H1 冻结 test 的预注册指标、formal 产物准入与单 GPU 资源契约
 configs/thesis/interfuser_visual_d7_build_v1.json - M2 H1 D7 配置冻结契约，在 formal/test 有效后生成哈希绑定的 B0/V 闭环配置

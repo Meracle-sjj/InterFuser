@@ -10,6 +10,7 @@ traffic_pretraining_dataset_v1.md: M1 交通语义数据规范，约束类别映
 semantic_pretraining_protocol_v1.md: M2 交通语义预训练协议，冻结同构 ResNet50d、一次性分割 head、离线指标、骨干迁移产物与优化/类别失衡诊断边界。
 interfuser_visual_transfer_protocol_v1.md: M2 H1 下游迁移协议，冻结 B0/V 唯一 RGB 初始化变量、无泄漏索引、单帧/连续帧 test、D7 配对统计与 strict checkpoint 准入门槛。
 experiment_records/: 论文实验事实记录，使用 run ID 与 SHA-256 连接 Git 配置和 results/ 原始产物。
+handoff_pedestrian_visual_review.md: 历史行人单帧复核交接清单；已由连续测量帧碰撞威胁审计替代，仅保留为 584 sequence 的来源索引。
 traffic_element_label_schema.md: 路线关联交通灯、虚拟停止边界及其 CARLA/Leaderboard 几何来源的 schema v2 契约。
 traffic_element_image_label_schema.md: 将 schema v2 目标与 RGB、语义、深度和 LiDAR 证据对齐的 schema v3 契约。
 

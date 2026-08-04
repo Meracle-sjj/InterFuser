@@ -6,6 +6,7 @@
 CLAUDE.md: 回归测试模块地图，确保标签来源、投影、采集、审计与运行兼容性可独立验证。
 test_apply_painted_line_reviews.py: 验证人工 painted-line 决策的路径约束、状态迁移和原子写入。
 test_audit_semantic_pretraining_data.py: 验证语义类别映射、dataset_index 分层抽样、RGB/mask 对齐统计和 pilot readiness 失败原因。
+test_audit_pedestrian_hazard_visibility.py: 验证行人碰撞威胁阶段、RGB 可见覆盖、天气重复签名、普通可见行人区分与缺失特权真值门禁。
 test_audit_traffic_element_labels.py: 验证 schema v2 审计对合法记录、禁用字段和来源错误的处理。
 test_audit_traffic_element_views.py: 验证 schema v3 的相机、LiDAR、投影、可见性和帧对齐审计。
 test_background_traffic_health.py: 验证背景交通健康度统计在 CARLA 参与者与道路投影上的行为。
@@ -30,6 +31,9 @@ test_run_interfuser_visual_test.py: 验证预注册 test 契约、索引哈希/�
 test_summarize_semantic_learning_curve.py: 验证 M2 pilot 汇总拒绝缺失预算、非嵌套 train、validation 漂移、pipeline/provenance 异常与产物哈希漂移。
 test_summarize_thesis_baseline.py: 验证 M0 汇总器拒绝缺失、重复、基础设施失败和未授权输入漂移，并按冻结口径确定性归约完整路线×种子矩阵。
 test_summarize_interfuser_visual_d7.py: 验证 M2 H1 汇总器要求 B0/V 各 21/21、固定 attempt 顺序、checkpoint-only 差异，并按冻结 offline+D7 规则生成结论。
+test_analyze_interfuser_visual_d7_failures.py: 验证配对 D7 的状态转移、首碰撞事件与起步转向/车道偏移连续控制帧归因。
+test_build_pedestrian_hazard_training_manifest.py: 验证行人危险 train-only 扩充、原 validation/test 不变、Town+route holdout 隔离与特权真值准入。
+test_evaluate_semantic_hazard_holdout.py: 验证行人危险 validation/test 样本归约、训练契约不可变性与 route-group 泄漏拒绝。
 test_run_interfuser_visual_d7_pair.py: 验证 M2 H1 D7 父级 runner 的 test 准入、B0→V 串行顺序、42/42 完成门槛、失败即停和目录幂等。
 test_build_interfuser_visual_d7_configs.py: 验证 D7 build 契约在 test 前只允许 preflight，并在 test 有效后确定性生成三份 checkpoint/provenance 绑定配置且禁止覆盖。
 test_traffic_element_collector.py: 验证采集器建立并保存多传感器、交通标签和测量目录。

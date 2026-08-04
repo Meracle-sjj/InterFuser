@@ -25,6 +25,7 @@ configs/thesis/semantic_pretraining_smoke_v1.json - M2 首次训练链路的模�
 configs/thesis/semantic_pretraining_pilot_v1.json - M2 数据量学习曲线的嵌套训练样本、完整验证集与统一预算契约
 configs/thesis/semantic_pretraining_optimization_probe_v1.json - M2 全量数据多 epoch 优化充分性与最佳 checkpoint 选择契约
 configs/thesis/semantic_pretraining_class_weight_probe_v1.json - M2 类别失衡诊断契约，冻结 inverse-sqrt 像素频率权重与来源 run
+configs/thesis/semantic_pretraining_pedestrian_hazard_probe_v1.json - M2 行人碰撞威胁 train-only 扩充 probe，冻结原验证口径、专项 holdout 与五轮预算
 configs/thesis/interfuser_downstream_split_v1.json - M2 H1 下游无泄漏 Town+route 全量索引投影契约
 configs/thesis/interfuser_visual_initialization_v1.json - M2 H1 B0/V 单变量视觉初始化与代码/权重哈希契约
 configs/thesis/interfuser_visual_pair_smoke_v1.json - M2 H1 B0/V 配对下游训练链路 smoke 预算、资源和产物契约

@@ -6,7 +6,9 @@
 CLAUDE.md: 数据工具模块地图，维护采集、标签、审计、复核和导出的单向数据流。
 apply_painted_line_reviews.py: 将显式人工复核 manifest 应用到 evidence schema，只改变可见实体标线状态。
 audit_semantic_pretraining_data.py: 从文件系统或 dataset_index 可复现抽样 RGB/语义帧对，统计类别覆盖、结构完整性并判定 M1 pilot readiness。
-build_semantic_split_manifest.py: 消费已通过的 pilot 抽样并按 Town+route 原子分组，冻结带三相机内容哈希、类别覆盖与泄漏检查的 train/validation/test manifest。
+audit_pedestrian_hazard_visibility.py: 将 AutoPilot 行人碰撞预测真值与三相机语义可见帧对齐，量化威胁阶段覆盖、相机贡献和天气重复签名，输出只用于数据审计的特权监督报告。
+build_semantic_split_manifest.py: 消费已通过的 pilot 抽样并按 Town+route 原子分组，冻结带三相机内容哈希的 train/validation/test manifest，同时提供单 sequence 可复用扫描契约。
+build_pedestrian_hazard_training_manifest.py: 在不改动原 validation/test 的前提下，按 Town+route 从行人碰撞威胁审计选择 train 扩充，并预留专项 validation/test holdout。
 build_interfuser_downstream_indexes.py: 将 M1 冻结 Town+route 归属投影到全量 InterFuser dataset_index，生成无 route-group 泄漏的下游 train/validation/test 索引与哈希 manifest。
 audit_traffic_element_labels.py: 校验 traffic-element schema v2 的结构、来源和路线停止目标覆盖。
 audit_traffic_element_views.py: 校验 evidence schema v3 的 RGB、深度、语义、LiDAR 对齐和可见性证据。

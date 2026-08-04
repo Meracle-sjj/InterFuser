@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 [INPUT]: 依赖 M1 pilot 审计 JSON、语义类别与 split 配置，以及 pilot 选中 sequence 的三相机 RGB/语义文件。
-[OUTPUT]: 对外提供 SplitError、load_split_config、build_split_manifest 与 CLI，生成按 Town+route 分组、无 sequence 泄漏且带内容哈希的确定性 split manifest。
+[OUTPUT]: 对外提供 SplitError、load_split_config、scan_semantic_sequence、build_split_manifest 与 CLI，生成按 Town+route 分组、无 sequence 泄漏且带内容哈希的确定性 split manifest。
 [POS]: tools/data 的 M1 数据划分准入器；复用审计器类别契约，把已通过 pilot 的样本冻结为训练/验证/测试集合，不修改源数据。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -154,7 +154,8 @@ def _route_id(relative_path):
     return int(match.group(1))
 
 
-def _scan_sequence(root, item, cameras, classes):
+def scan_semantic_sequence(root, item, cameras, classes):
+    """Return one content-hashed semantic sequence record and scan errors."""
     relative_path = item.get("path")
     town = item.get("town")
     weather = item.get("weather")
@@ -438,7 +439,7 @@ def build_split_manifest(
     errors = []
     global_candidates = {}
     for selected in pilot["sequence_selection"]["selected_sequences"]:
-        record, sequence_errors = _scan_sequence(
+        record, sequence_errors = scan_semantic_sequence(
             root, selected, cameras, class_config["classes"]
         )
         records.append(record)

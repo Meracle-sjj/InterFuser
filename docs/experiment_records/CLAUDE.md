@@ -17,6 +17,9 @@ CLAUDE.md: 实验事实记录模块地图，约束摘要只能引用已完成 ru
 2026-07-23-m2-semantic-optimization-probe-v1.md: M2 五轮无权重优化充分性 probe，固化逐轮/逐类指标、best checkpoint、产物哈希与类别权重准入结论。
 2026-07-23-m2-semantic-class-weight-probe-v1.md: M2 inverse-sqrt 类别权重 probe，固化配对预算、逐类收益/代价、best 骨干哈希与暂不补采的证据边界。
 2026-07-24-m2-interfuser-visual-pair-smoke-v1.md: M2 H1 下游 B0/V 配对 smoke，固化单变量参数、两组有效训练、checkpoint schema 和资源释放证据。
+2026-07-31-m2-visual-test-frozen-eval.md: M2 H1 冻结 test 配对评估，固化 B0/V 单帧任务、连续帧稳定性指标与 D7 准入事实。
+2026-08-04-m1-pedestrian-hazard-audit-and-augmentation.md: M1.1 行人碰撞威胁审计，固化 584 sequence 的特权真值来源、连续可见性、train-only 扩充与 route-group 专项 holdout。
+2026-08-04-m2-visual-d7-continuous-frame-failure-analysis.md: M2 H1 D7 连续帧失败归因，固化 route39 三 seed 起步轨迹/转向偏移与 3.05 s 同位置护栏碰撞。
 
 记录只陈述事实和结论边界；实验协议归 `../baseline_evaluation_protocol_v1.md`，大体积原始结果归远端 `results/`。
 

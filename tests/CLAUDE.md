@@ -25,6 +25,7 @@ test_semantic_split_and_review.py: 验证 M1 split 的 Town+route 原子性、�
 test_semantic_pretraining.py: 验证 M2 配置哈希、smoke/pilot/optimization 数据边界、确定性样本、CARLA 标签映射、无权重/加权确定性损失、离线指标、ResNet50d 前向和骨干严格迁移兼容性。
 test_interfuser_downstream_indexes.py: 验证 M1 holdout route group 的全量投影、未见组只进 train、索引哈希/覆盖门禁与 CarlaMVDetDataset 显式 index 选择。
 test_interfuser_visual_pair.py: 验证 B0/V 初始 checkpoint 仅改变 RGB 共享骨干 alias、非 RGB 状态哈希相同且全模型 strict load。
+test_interfuser_visual_swap_pair.py: 验证 M0-FT 原样继承历史底座、M0-V 仅替换 RGB alias、非 RGB 状态相同且错误底座元数据被拒绝。
 test_run_interfuser_visual_pair.py: 验证 B0/V 训练命令共享预算、smoke 索引确定性、formal test index 强制绑定、args 允许差异归一和 summary 完整性门禁。
 test_interfuser_offline_metrics.py: 验证冻结 test 的 traffic AP/AUC/IoU、逐类混淆、正确 stop-sign head、waypoint 精确分母、目标条件连续帧残差与缺失支持门禁。
 test_run_interfuser_visual_test.py: 验证预注册 test 契约、索引哈希/相邻帧计数漂移、formal 未完成阻断、B0/V checkpoint/schema 准入和固定方向差值。

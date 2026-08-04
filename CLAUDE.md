@@ -29,6 +29,7 @@ configs/thesis/semantic_pretraining_pedestrian_hazard_probe_v1.json - M2 行人�
 configs/thesis/interfuser_downstream_split_v1.json - M2 H1 下游无泄漏 Town+route 全量索引投影契约
 configs/thesis/interfuser_visual_initialization_v1.json - M2 H1 B0/V 单变量视觉初始化与代码/权重哈希契约
 configs/thesis/interfuser_visual_initialization_pedestrian_hazard_v1.json - M2 H1 行人危险骨干的 B0/V 单变量严格迁移契约
+configs/thesis/interfuser_visual_swap_initialization_v1.json - M2 H1 固定历史 M0 底座的 M0-FT/M0-V 单 RGB 骨干替换契约
 configs/thesis/interfuser_visual_pair_smoke_v1.json - M2 H1 B0/V 配对下游训练链路 smoke 预算、资源和产物契约
 configs/thesis/interfuser_visual_pair_pedestrian_hazard_smoke_v1.json - M2 H1 行人危险骨干 B0/V 配对下游 smoke 契约
 configs/thesis/interfuser_visual_pair_formal_v1.json - M2 H1 B0/V 正式下游训练预算、无泄漏三分索引和资源契约

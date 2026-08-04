@@ -10,6 +10,7 @@ evaluate_semantic_hazard_holdout.py: 将训练不可见的 route-group 行人危
 summarize_semantic_hazard_holdout.py: 严格校验 baseline/augmented 专项样本、类别权重和真值边界相同后，归约全局与逐类配对差值。
 summarize_semantic_learning_curve.py: 验证 pilot run 的完整预算矩阵、嵌套 train 样本、相同完整 validation、provenance 与产物哈希，并确定性归约学习曲线。
 interfuser_visual_pair.py: 冻结 ImageNet B0 与交通域 V 的 RGB 骨干差异，生成非 RGB 张量逐值相同且可被 InterFuser strict load 的全模型初始 checkpoint 对。
+interfuser_visual_swap_pair.py: strict load 历史 M0 固定底座并生成 M0-FT/M0-V checkpoint 对，证明底座全状态保真且唯一变量是交通域 RGB 骨干替换。
 run_interfuser_visual_pair.py: 串行编排 B0/V 下游训练，守卫 GPU/分布式端口/进程组，并严格归约训练参数、summary、checkpoint 和资源释放 manifest。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

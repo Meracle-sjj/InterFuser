@@ -66,8 +66,24 @@ validation/test 各包含 8 个 Town 分层 route group，与扩充 train 的 ro
 - augmented 危险 holdout 报告：`results/thesis_m2/semantic_hazard_holdout_augmented_20260804.json`，SHA-256 `62a84f2c3e6a4e51ca50520cd00111e0e423042b2a132e1d165d711f7170fcfb`。
 - 配对归约：`results/thesis_m2/semantic_hazard_holdout_paired_summary_20260804.json`，SHA-256 `b9d966b1c2d9e8cfe5e48490b1e08076e021587e61c4b71d6a87d8c3bf2f52b6`。
 
+## InterFuser 迁移与下游 smoke
+
+新骨干已通过 InterFuser 单变量迁移和一轮 B0/V 下游训练 smoke：
+
+- 初始化 manifest pipeline-valid，仅 330 个唯一 RGB 骨干张量（全模型两个 alias 共 660 张量）发生变化，非 RGB state SHA-256 一致，全模型 strict-load 通过。
+- B0 初始 checkpoint SHA-256 仍为 `92409ebf2e354595dc400cd73d9e900da582e68ab8d606217281cc04ecab45b0`，与 v1 字节相同；新 V 为 `68b46f522569ba87663dd8cba6d3413ba1cb4acf39754008aceb6e3d74d43ada`。
+- smoke 对 B0/V 使用同一 2 个 train sequence、2 个 validation sequence、单 epoch、GPU 6/7 和归一化参数哈希；两者均 pipeline-valid，运行后 GPU 完全释放。
+- smoke validation L1 为 B0 `6.437353`、V `6.391468`；此差值只证明链路可运行，样本与 epoch 预算不允许将其当作 H1 收益。
+
+迁移产物：
+
+- 初始化配置 SHA-256 `83296a26ed15fb23deae2e7c2c12a9128a632db0a9d69fe6878dd508d97b9f0d`。
+- 初始化 manifest：`results/thesis_m2/m2-interfuser-visual-init-pedestrian-hazard-v1-seed20260723/initialization_manifest.json`，SHA-256 `976be079a4783aaaaa7ebe0137382fd18e750fc389ef38d965168cf06070af9f`。
+- smoke 配置 SHA-256 `a9c895f1fe8c607a0863dead517f9da47d5bef83b06ea9bb4bd37ec2b6538212`。
+- smoke run manifest：`results/thesis_m2/m2-interfuser-visual-pair-pedestrian-hazard-smoke-v1-seed20260723/run_manifest.json`，SHA-256 `3f262994c7fa5bb4eb24627045e7cabcb7e0d87a9f86af1be531020ec0599a4a`。
+
 ## 证据边界与下一门禁
 
-当前只完成一个训练 seed，还不是方差估计。这些结果证明离线交通语义与行人危险泛化改善，但不能推导闭环 Driving Score 改善。该骨干进入 InterFuser 后，必须先过 route39 起步 40 周期轨迹/偏移门禁，再决定是否重跑完整 D7。
+当前只完成一个语义训练 seed，还不是方差估计。这些结果证明离线交通语义与行人危险泛化改善，但不能推导闭环 Driving Score 改善。迁移/smoke 已消除 schema 与运行链路风险；下一步是正式下游训练，然后必须先过 route39 起步 40 周期轨迹/偏移门禁，再决定是否重跑完整 D7。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

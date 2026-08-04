@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "protocol_document": "docs/interfuser_visual_transfer_protocol_v1.md",
+  "model": {
+    "name": "interfuser_baseline",
+    "model_definition": "interfuser/timm/models/interfuser.py",
+    "model_definition_sha256": "4f62c726147ee51c198e88195e1ec7048e711e9124f2d1e42f936b7a96049c4f",
+    "resnet_definition": "interfuser/timm/models/resnet.py",
+    "resnet_definition_sha256": "017a732757bdad519d17860475cd83def1eb7dcfbf5baba160409439c06ef93a"
+  },
+  "b0_rgb_initialization": {
+    "source": "timm_imagenet_resnet50d_ra2",
+    "checkpoint": "/home/shijj/.cache/torch/hub/checkpoints/resnet50d_ra2-464e36ba.pth",
+    "checkpoint_sha256": "464e36baa940a80971e717454e61e8f6fc1a1b284b7a3dbb6f6fd4c3da78533d"
+  },
+  "v_rgb_initialization": {
+    "source": "m2_semantic_pedestrian_hazard_probe_v1_best_epoch5",
+    "checkpoint": "results/thesis_m2/m2-semantic-pedestrian-hazard-probe-v1-full-invsqrt-seed20260723/backbone_resnet50d.pth",
+    "checkpoint_sha256": "a0673b36325b54695f82aef52829c34aaaa4ed7652ff81ee3bee36bf180ea56d",
+    "architecture": "resnet50d",
+    "source_training_config_sha256": "897838b8cd0345cd8efb5fe8c41cbf093f3443c9d14b93a962a6d672b9c8046c"
+  },
+  "pair_invariant": {
+    "only_changed_module": "rgb_backbone",
+    "expected_unique_rgb_tensors": 330,
+    "expected_full_model_rgb_alias_tensors": 660,
+    "expected_imagenet_dtype_normalized_buffers": 55,
+    "strict_full_model_checkpoint_load": true
+  },
+  "seed": 20260723,
+  "require_clean_git": true,
+  "result_root": "results/thesis_m2"
+}

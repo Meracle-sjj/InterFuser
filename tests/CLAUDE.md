@@ -34,6 +34,7 @@ test_summarize_interfuser_visual_d7.py: 验证 M2 H1 汇总器要求 B0/V 各 21
 test_analyze_interfuser_visual_d7_failures.py: 验证配对 D7 的状态转移、首碰撞事件与起步转向/车道偏移连续控制帧归因。
 test_build_pedestrian_hazard_training_manifest.py: 验证行人危险 train-only 扩充、原 validation/test 不变、Town+route holdout 隔离与特权真值准入。
 test_evaluate_semantic_hazard_holdout.py: 验证行人危险 validation/test 样本归约、训练契约不可变性与 route-group 泄漏拒绝。
+test_summarize_semantic_hazard_holdout.py: 验证行人危险 baseline/augmented 样本 key 一致、逐类差值与 loss/特权边界漂移拒绝。
 test_run_interfuser_visual_d7_pair.py: 验证 M2 H1 D7 父级 runner 的 test 准入、B0→V 串行顺序、42/42 完成门槛、失败即停和目录幂等。
 test_build_interfuser_visual_d7_configs.py: 验证 D7 build 契约在 test 前只允许 preflight，并在 test 有效后确定性生成三份 checkpoint/provenance 绑定配置且禁止覆盖。
 test_traffic_element_collector.py: 验证采集器建立并保存多传感器、交通标签和测量目录。

@@ -73,4 +73,16 @@ seed0 两组均为 `pipeline_valid`，M0-FT/M0-V 首次达到 1 m 偏移分别�
 
 三 seed 归约先逐 seed 报告 DS/RC/IS、前 40 个运动帧统计、首次 1 m 偏移 step、首碰撞与 blocked，再报告 route39 内三个 seed 的均值和范围。若 M0-V 三个 seed 都未出现早期失控，且 DS/RC 差异不呈灾难性一致下降，则进入完整 D7；若出现可重复早期失控或三个 seed 均明显劣于 M0-FT，则先进入配对短微调。route39 的方向性优势仍不能替代 D7 总体结论。
 
+## 8. D7-minus-route39 零微调续跑
+
+route39 三 seed 结果记录于 `docs/experiment_records/2026-08-05-m2-m0-visual-swap-route39-zero-ft.md`：6/6 pipeline-valid，M0-V 未出现早期失控，准入 D7 剩余路线。为避免重复消耗已完成的 route39，冻结：
+
+- 路线顺序 `[18,6,12,30,36,0]`，每条依次 seeds `[0,1,2]`，每个 variant 18 个 attempt；
+- M0-FT Run ID `m2-interfuser-m0-ft-d7-minus39-seeds0-2-zero-ft-20260805-v1`；
+- M0-V Run ID `m2-interfuser-m0-v-d7-minus39-seeds0-2-zero-ft-20260805-v1`；
+- 执行顺序固定为 M0-FT 全部 18 个 attempt 后 M0-V 全部 18 个 attempt；任一 pipeline-invalid 立即停止；
+- 最终按 variant 合并本轮 18 个 attempt 与 route39 三 seed，形成 21 个 route×seed 的完整 D7，不重跑、不以零填充。
+
+完整 D7 主指标为先 route 内三 seed 均值、再七 route 宏平均的 DS；同时报告 RC/IS、21 个配对差值、路线级连续帧失败与资源释放。零微调 D7 只回答“固定 M0 底座上直接替换视觉骨干”的收益；若结果混合或下降，再预注册相同预算的 M0-FT/M0-V 短微调，不得用后验调参改写本轮事实。
+
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

@@ -21,6 +21,7 @@ CLAUDE.md: 实验事实记录模块地图，约束摘要只能引用已完成 ru
 2026-08-04-m1-pedestrian-hazard-audit-and-augmentation.md: M1.1 行人碰撞威胁审计，固化 584 sequence 的特权真值来源、连续可见性、train-only 扩充与 route-group 专项 holdout。
 2026-08-04-m2-visual-d7-continuous-frame-failure-analysis.md: M2 H1 D7 连续帧失败归因，固化 route39 三 seed 起步轨迹/转向偏移与 3.05 s 同位置护栏碰撞。
 2026-08-04-m2-semantic-pedestrian-hazard-probe-v1.md: M2 行人碰撞威胁 train-only 扩充 probe，固化原 validation、8+8 个 route-group 专项 holdout、InterFuser 严格迁移与下游 smoke。
+2026-08-05-m2-m0-visual-swap-route39-zero-ft.md: M2 固定历史 M0 底座的语义 ResNet50d 零微调替换诊断，固化 route39 三 seed 连续控制帧、闭环配对差值与 D7 准入结论。
 
 记录只陈述事实和结论边界；实验协议归 `../baseline_evaluation_protocol_v1.md`，大体积原始结果归远端 `results/`。
 

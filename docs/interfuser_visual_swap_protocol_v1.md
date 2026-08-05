@@ -62,4 +62,15 @@
 
 若 M0-FT 本身不满足包装校准，停止并修复运行/加载链；若只有 M0-V 命中灾难性失配，进入相同预算的配对短微调；若二者均未命中，则进入 route39 三 seed 稳定性复核。单 seed 结果不得用于宣称视觉收益。
 
+## 7. route39 seeds 1–2 稳定性续跑
+
+seed0 两组均为 `pipeline_valid`，M0-FT/M0-V 首次达到 1 m 偏移分别为 step 694/686，M0-V 未命中第 6 节的灾难性失配，因此本轮不启动短微调，冻结续跑：
+
+- M0-FT Run ID `m2-interfuser-m0-ft-route39-seeds1-2-zero-ft-20260805-v1`；
+- M0-V Run ID `m2-interfuser-m0-v-route39-seeds1-2-zero-ft-20260805-v1`；
+- 两组都只运行 `route_id=39`、`seeds=[1,2]`，并与 seed0 结果按 variant 合并为三 seed；
+- 顺序固定为 M0-FT seeds 1→2，再 M0-V seeds 1→2；任一 attempt `pipeline_invalid` 立即停止，不以零分代替。
+
+三 seed 归约先逐 seed 报告 DS/RC/IS、前 40 个运动帧统计、首次 1 m 偏移 step、首碰撞与 blocked，再报告 route39 内三个 seed 的均值和范围。若 M0-V 三个 seed 都未出现早期失控，且 DS/RC 差异不呈灾难性一致下降，则进入完整 D7；若出现可重复早期失控或三个 seed 均明显劣于 M0-FT，则先进入配对短微调。route39 的方向性优势仍不能替代 D7 总体结论。
+
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

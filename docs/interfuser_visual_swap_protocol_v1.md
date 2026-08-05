@@ -49,4 +49,17 @@
 
 本协议产物是 H1 的低成本可行性证据。若固定底座微调恢复并稳定优于 M0-FT，可将其作为 V 组实现；若只在从头训练配方有效，则保留旧 B0/V 定义并如实区分两种迁移范式。任何一种进入最终四组消融前，都必须先解决本地基线闭环复现问题。
 
+## 6. route39 seed0 零微调诊断
+
+首个闭环准入固定为 M0-FT 后 M0-V，分别使用：
+
+- `configs/thesis/interfuser_visual_swap_route39_m0_ft_v1.json`，Run ID `m2-interfuser-m0-ft-route39-seed0-zero-ft-20260805-v1`；
+- `configs/thesis/interfuser_visual_swap_route39_m0_v_v1.json`，Run ID `m2-interfuser-m0-v-route39-seed0-zero-ft-20260805-v1`。
+
+两次运行都只允许 `route_id=39`、`seed=0`，复用同一 agent、控制器、路线、场景、背景交通、GPU/端口和超时。M0-FT 用于证明新 checkpoint 包装未改变历史底座行为；只有 M0-FT `pipeline_valid` 后才允许启动 M0-V。
+
+本阶段将“灾难性特征失配”预定义为 M0-V 在前 10 个仿真秒发生 layout collision/vehicle blocked，或在前 50 个运动控制帧内首次达到 `abs(lane_offset) >= 1 m`，同时 M0-FT 未发生同类事件。连续控制归约还必须报告前 40 个运动帧的平均绝对转向、最大绝对转向、平均/最大绝对车道偏移、首次 1 m 偏移 step 与首碰撞时间。
+
+若 M0-FT 本身不满足包装校准，停止并修复运行/加载链；若只有 M0-V 命中灾难性失配，进入相同预算的配对短微调；若二者均未命中，则进入 route39 三 seed 稳定性复核。单 seed 结果不得用于宣称视觉收益。
+
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

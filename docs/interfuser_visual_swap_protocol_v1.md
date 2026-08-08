@@ -85,4 +85,17 @@ route39 三 seed 结果记录于 `docs/experiment_records/2026-08-05-m2-m0-visua
 
 完整 D7 主指标为先 route 内三 seed 均值、再七 route 宏平均的 DS；同时报告 RC/IS、21 个配对差值、路线级连续帧失败与资源释放。零微调 D7 只回答“固定 M0 底座上直接替换视觉骨干”的收益；若结果混合或下降，再预注册相同预算的 M0-FT/M0-V 短微调，不得用后验调参改写本轮事实。
 
+## 9. M0-FT v1 晚发崩溃与重新准入
+
+M0-FT 首批 `m2-interfuser-m0-ft-d7-minus39-seeds0-2-zero-ft-20260805-v1` 在第 11 个 attempt `route_30_seed_1` fail-fast。该 attempt 已完成闭环、写出 Leaderboard 记录，但 CARLA 在评测器清理前收到 SIGSEGV，随后评测器等待已退出的 simulator 120 秒并以 SIGABRT 退出。这是基础设施生命周期失败，不改写为模型零分，也不把已落盘分数改判为 pipeline-valid。
+
+v1 原目录及 10 个有效前缀永久保留，但整批不进入 D7 聚合，禁止 resume、覆盖或与后续小批次拼接。重新准入顺序冻结为：
+
+1. 先以新 Run ID `m2-interfuser-m0-ft-route30-seed1-lifecycle-smoke-20260808-v1` 只复现 `route30 / seed1`；
+2. 只有 smoke `pipeline_valid=true`、评测器正常退出、CARLA 由 runner 回收，且 2155/2255 与 GPU 6/7 全部释放，才允许启动新 Run ID `m2-interfuser-m0-ft-d7-minus39-seeds0-2-zero-ft-20260808-v2`；
+3. v2 必须从 18 个 attempt 完整重跑，严格复用 v1 的配置、checkpoint、路线/seed 顺序、代码哈希和资源约束；
+4. 只有 v2 的 18/18 attempt 全部 pipeline-valid，才允许启动尚未运行的 M0-V 批次。
+
+GPU 6/7 被外部作业占用时，smoke 和 v2 都必须等待原冻结资源释放；不得临时改占其他 GPU，也不得终止他人进程。
+
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

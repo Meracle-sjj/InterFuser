@@ -2,17 +2,17 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 状态 | **FROZEN/WAITING：GPU1 存在外部 compute owner，smoke 未启动** |
+| 状态 | **FROZEN/READY：已显式准入阈值内共享，先运行 smoke** |
 | 原资源 | agent GPU6 / CARLA GPU7，已被外部作业各占用约 30.6 GiB |
 | 新资源 | agent GPU1 / CARLA GPU1，RTX 5090 32,607 MiB |
-| M0-FT 配置 | `configs/thesis/interfuser_visual_swap_m0_ft_gpu1_v1.json` / `05133921052a39711806785ed165f6cdaea92f7421cacb4083cf36fe1c006cd1` |
-| M0-V 配置 | `configs/thesis/interfuser_visual_swap_m0_v_gpu1_v1.json` / `a1ff635a303027f321ace399a527d85528e59664b7bc1b9eac352b6e0c20afce` |
+| M0-FT 配置 | `configs/thesis/interfuser_visual_swap_m0_ft_gpu1_v1.json` / `2be1499a8ed9960934a0cd5131d17885a777e112156474244a2daa8eedf64447` |
+| M0-V 配置 | `configs/thesis/interfuser_visual_swap_m0_v_gpu1_v1.json` / `814a77df6b8f7553df564729ee13fa085ba15563068ad7a38104a996164b4506` |
 
 ## 1. 迁移原因与边界
 
 2026-08-09 21:20 +08:00 资源复核显示 GPU 6/7 只剩约 1.4 GiB 且接近满负载，原门控程序已等待约 24 小时仍不具备启动条件。GPU1 只使用 709 MiB，8 次连续秒级采样的 SM 利用率均为 0%，可用显存 31,401 MiB。原 GPU6/7 等待器 PID `3596597` 已在用户确认后正常终止，没有评测 attempt 被创建。
 
-本迁移只改变物理 GPU 索引和“双卡→同卡”布置。两张物理卡均为 RTX 5090；checkpoint、模型、运行代码、背景交通和聚合参数不变。GPU1 当前存在一个占 674 MiB 但短时利用率为 0% 的历史 compute context；本项目不终止该进程，只有该 compute owner 自行退出且总显存低于 1,024 MiB 时才准入。
+本迁移只改变物理 GPU 索引和“双卡→同卡”布置。两张物理卡均为 RTX 5090；checkpoint、模型、运行代码、背景交通和聚合参数不变。GPU1 当前存在一个占 674 MiB 但短时利用率为 0% 的历史 compute context；本项目不终止该进程，而是以配置级显式例外允许总显存低于 1,024 MiB 时共享 GPU1。
 
 ## 2. 容量与可比性
 
@@ -30,6 +30,12 @@ smoke 必须同时满足 `pipeline_valid=true`、evaluator exit 0、`carla_exite
 
 GPU1 配置提交 `ed5746b` 后，门控于 2026-08-09 21:30 +08:00 尝试启动 smoke。runner 在创建 Run 目录和启动 CARLA 之前拒绝：`GPU 1 has active compute processes: 3983756 (..., 674 MiB)`。因此本次没有 attempt、没有驾驶结果，也不构成 pipeline-invalid。
 
-该拒绝证明仅检查显存与短时利用率不足以保证独占性。后续门控必须同时检查 GPU1 无任何 compute owner，不得绕过 runner 的原生安全门禁。
+该拒绝证明 runner 的默认独占门禁在正常工作。后续不删除或全局绕过该门禁，而是按第 5 节增加配置级、仍受总显存阈值约束的显式例外。
+
+## 5. 阈值内受控共享
+
+用户确认 674 MiB、0% 短时利用率不应单独阻止本轮。资源守卫因此增加默认为 false 的 `allow_existing_compute_processes_below_threshold` 开关：其他配置仍拒绝任何 compute owner；仅两个 GPU1 配置显式开启，且总显存一旦高于 1,024 MiB 仍立即拒绝启动。
+
+本例外不改写首次拒绝事实，也不将开关扩散到其他实验。smoke 将记录 GPU1 的 709 MiB 启动基线、运行峰值和回落时间；若同卡布置导致 OOM、超时或无法回落，仍按 pipeline-invalid fail-fast。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

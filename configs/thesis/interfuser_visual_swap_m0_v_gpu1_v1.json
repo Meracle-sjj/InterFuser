@@ -156,6 +156,7 @@
   },
   "runtime": {
     "agent_cuda_visible_device": 1,
+    "allow_existing_compute_processes_below_threshold": true,
     "carla": "0.9.16",
     "carla_client_timeout_seconds": 120,
     "carla_graphics_adapter": 1,

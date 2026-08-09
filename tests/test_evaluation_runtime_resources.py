@@ -1,6 +1,6 @@
 """
 [INPUT]: 依赖 tools.evaluation.runtime_resources 的进程组回收、GPU 计算 owner 门禁与释放等待 API，并用独立 POSIX session 构造忽略 SIGTERM 的子进程。
-[OUTPUT]: 提供外来 GPU 计算进程拒绝、CARLA 包装进程先退出时整组清理、CUDA 显存延迟归零的生命周期回归测试。
+[OUTPUT]: 提供外来 GPU 计算进程默认拒绝、显式阈值内共享、越界仍拒绝、CARLA 包装进程整组清理与 CUDA 显存释放的回归测试。
 [POS]: tests 的 M0 外部资源回收测试，覆盖启动前独占性与运行后完整回收两个资源边界。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -42,6 +42,53 @@ class EvaluationRuntimeResourceTests(unittest.TestCase):
                 RunnerError, "GPU 7 has active compute processes: 1903747"
             ):
                 ensure_gpus_available([6, 7], threshold_mb=1024)
+
+    def test_gpu_gate_allows_existing_compute_process_below_threshold_when_opted_in(self):
+        with patch(
+            "tools.evaluation.runtime_resources._gpu_memory_usage",
+            return_value={1: 709},
+        ), patch(
+            "tools.evaluation.runtime_resources._gpu_compute_processes",
+            return_value={
+                1: [
+                    {
+                        "pid": "3983756",
+                        "process_name": "/external/python",
+                        "used_memory_mb": "674",
+                    }
+                ]
+            },
+        ):
+            usage = ensure_gpus_available(
+                [1],
+                threshold_mb=1024,
+                allow_existing_compute_processes_below_threshold=True,
+            )
+
+        self.assertEqual(usage, {1: 709})
+
+    def test_gpu_gate_opt_in_still_rejects_memory_above_threshold(self):
+        with patch(
+            "tools.evaluation.runtime_resources._gpu_memory_usage",
+            return_value={1: 2048},
+        ), patch(
+            "tools.evaluation.runtime_resources._gpu_compute_processes",
+            return_value={
+                1: [
+                    {
+                        "pid": "3983756",
+                        "process_name": "/external/python",
+                        "used_memory_mb": "674",
+                    }
+                ]
+            },
+        ):
+            with self.assertRaisesRegex(RunnerError, "above 1024 MiB"):
+                ensure_gpus_available(
+                    [1],
+                    threshold_mb=1024,
+                    allow_existing_compute_processes_below_threshold=True,
+                )
 
     def test_stop_process_group_kills_child_after_leader_exits(self):
         child_code = (

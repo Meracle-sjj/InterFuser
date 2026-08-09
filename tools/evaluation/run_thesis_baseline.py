@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-[INPUT]: 依赖通过 P0 的 baseline_eval JSON、runtime_resources 资源守卫、CARLA/Leaderboard 运行时与冻结 checkpoint。
+[INPUT]: 依赖通过 P0 的 baseline_eval JSON、runtime_resources 资源守卫及其默认独占/显式低占用共享策略、CARLA/Leaderboard 运行时与冻结 checkpoint。
 [OUTPUT]: 对外提供 RunnerError、build_run_plan、write_single_route_xml、parse_leaderboard_result、execute_run_plan 与 CLI，生成隔离的 route/seed 原始结果、资源退出状态和显式基础设施失败原因。
 [POS]: tools/evaluation 的 M0 配置驱动 runner，位于静态预检之后、统计汇总之前；用短命子进程隔离 CARLA 原生 RPC 故障，显式 --execute 才启动外部进程。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -474,6 +474,9 @@ def _evaluator_command(repo_root, plan, attempt, route_path, result_path):
 
 def _execute_attempt(repo_root, plan, run_dir, attempt):
     runtime = plan["runtime"]
+    allow_existing_compute = bool(
+        runtime.get("allow_existing_compute_processes_below_threshold", False)
+    )
     attempt_dir = run_dir / "attempts" / attempt["attempt_id"]
     attempt_dir.mkdir(parents=True, exist_ok=False)
     route_path = write_single_route_xml(
@@ -525,7 +528,11 @@ def _execute_attempt(repo_root, plan, run_dir, attempt):
         attempt_manifest["gpu_memory_before_mb"] = {
             str(index): value
             for index, value in ensure_gpus_available(
-                gpu_indices, runtime["gpu_busy_memory_threshold_mb"]
+                gpu_indices,
+                runtime["gpu_busy_memory_threshold_mb"],
+                allow_existing_compute_processes_below_threshold=(
+                    allow_existing_compute
+                ),
             ).items()
             if index in gpu_indices
         }
@@ -620,7 +627,11 @@ def _execute_attempt(repo_root, plan, run_dir, attempt):
                 cleanup_errors.append(str(exc))
             try:
                 attempt_manifest["gpu_release_wait_seconds"] = wait_for_gpus_available(
-                    gpu_indices, runtime["gpu_busy_memory_threshold_mb"]
+                    gpu_indices,
+                    runtime["gpu_busy_memory_threshold_mb"],
+                    allow_existing_compute_processes_below_threshold=(
+                        allow_existing_compute
+                    ),
                 )
             except RunnerError as exc:
                 cleanup_errors.append(str(exc))
@@ -652,13 +663,20 @@ def execute_run_plan(plan, repo_root=REPO_ROOT, resume=False):
     threshold = _positive_int(
         runtime["gpu_busy_memory_threshold_mb"], "gpu_busy_memory_threshold_mb"
     )
+    allow_existing_compute = bool(
+        runtime.get("allow_existing_compute_processes_below_threshold", False)
+    )
     selected_gpu_indices = sorted(
         {
             runtime["agent_cuda_visible_device"],
             runtime["carla_graphics_adapter"],
         }
     )
-    initial_gpu_usage = ensure_gpus_available(selected_gpu_indices, threshold)
+    initial_gpu_usage = ensure_gpus_available(
+        selected_gpu_indices,
+        threshold,
+        allow_existing_compute_processes_below_threshold=allow_existing_compute,
+    )
     ensure_ports_free([runtime["carla_port"], runtime["traffic_manager_port"]])
 
     run_dir = Path(plan["run_directory"])
@@ -685,6 +703,9 @@ def execute_run_plan(plan, repo_root=REPO_ROOT, resume=False):
             "attempts": [],
             "hardware_preflight": {
                 "host": socket.gethostname(),
+                "allow_existing_compute_processes_below_threshold": (
+                    allow_existing_compute
+                ),
                 "gpu_memory_used_mb": {
                     str(index): initial_gpu_usage[index] for index in selected_gpu_indices
                 },

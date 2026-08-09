@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-[INPUT]: 依赖 POSIX 进程组、TCP socket、nvidia-smi GPU UUID/计算进程与 Python subprocess/threading，观察 runner 独占的端口和 GPU。
-[OUTPUT]: 对外提供 RunnerError、端口/GPU 门禁与释放等待，拒绝任何已有 GPU 计算 owner，并提供 GPU 峰值监控和完整进程组回收能力。
-[POS]: tools/evaluation 的底层运行时资源守卫，将外部进程生命周期、外来 GPU owner 与硬件归零从实验编排中隔离。
+[INPUT]: 依赖 POSIX 进程组、TCP socket、nvidia-smi GPU UUID/计算进程、显存阈值与显式低占用共享策略，观察 runner 所需端口和 GPU。
+[OUTPUT]: 对外提供 RunnerError、端口/GPU 门禁与释放等待；默认拒绝已有 GPU compute owner，仅在显式准入时允许总显存未越界的低占用 context，并提供峰值监控和进程组回收。
+[POS]: tools/evaluation 的底层运行时资源守卫，将外部进程生命周期、GPU 独占/受控共享策略与硬件释放从实验编排中隔离。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
@@ -128,7 +128,11 @@ def _gpu_compute_processes():
     return processes
 
 
-def ensure_gpus_available(indices, threshold_mb):
+def ensure_gpus_available(
+    indices,
+    threshold_mb,
+    allow_existing_compute_processes_below_threshold=False,
+):
     usage = _gpu_memory_usage()
     compute_processes = _gpu_compute_processes()
     failures = []
@@ -140,7 +144,7 @@ def ensure_gpus_available(indices, threshold_mb):
                 f"GPU {index} uses {usage[index]} MiB, above {threshold_mb} MiB"
             )
         owners = compute_processes.get(index, [])
-        if owners:
+        if owners and not allow_existing_compute_processes_below_threshold:
             details = ", ".join(
                 f"{item['pid']} ({item['process_name']}, "
                 f"{item['used_memory_mb']} MiB)"
@@ -157,13 +161,20 @@ def wait_for_gpus_available(
     threshold_mb,
     timeout_seconds=GPU_RELEASE_TIMEOUT_SECONDS,
     poll_seconds=GPU_RELEASE_POLL_SECONDS,
+    allow_existing_compute_processes_below_threshold=False,
 ):
     """Wait for runner-owned CUDA contexts to release their memory."""
     started = time.monotonic()
     deadline = started + max(0.0, float(timeout_seconds))
     while True:
         try:
-            ensure_gpus_available(indices, threshold_mb)
+            ensure_gpus_available(
+                indices,
+                threshold_mb,
+                allow_existing_compute_processes_below_threshold=(
+                    allow_existing_compute_processes_below_threshold
+                ),
+            )
             return round(time.monotonic() - started, 3)
         except RunnerError as exc:
             last_error = exc

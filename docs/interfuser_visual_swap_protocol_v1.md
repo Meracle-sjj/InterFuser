@@ -98,4 +98,23 @@ v1 原目录及 10 个有效前缀永久保留，但整批不进入 D7 聚合，
 
 GPU 6/7 被外部作业占用时，smoke 和 v2 都必须等待原冻结资源释放；不得临时改占其他 GPU，也不得终止他人进程。
 
+## 10. GPU1 同卡资源迁移
+
+2026-08-09 复核显示 GPU 6/7 被外部作业各占用约 30.6 GiB，而同型号 RTX 5090 GPU1 仅使用 709 MiB、连续短时采样利用率为 0%。经用户确认，准许将未启动的恢复链路迁移到 GPU1，但不改写 GPU6/7 上的历史 run 事实。
+
+资源变更只包含 `agent_cuda_visible_device: 6→1` 和 `carla_graphics_adapter: 7→1`；GPU 型号、checkpoint、agent、controller、路线、场景、背景交通、seed、端口、超时和聚合口径保持不变。历史峰值为 agent 936 MiB 与 CARLA 5,825 MiB，合计显著低于 GPU1 的 32,607 MiB；M0-FT/M0-V 必须都使用同一 GPU1 配置，禁止只为一组改卡。
+
+机器可读契约为：
+
+- M0-FT：`configs/thesis/interfuser_visual_swap_m0_ft_gpu1_v1.json`；
+- M0-V：`configs/thesis/interfuser_visual_swap_m0_v_gpu1_v1.json`。
+
+执行顺序与新 Run ID 冻结为：
+
+1. `m2-interfuser-m0-ft-route30-seed1-lifecycle-smoke-gpu1-20260809-v1`；
+2. smoke 通过后运行 `m2-interfuser-m0-ft-d7-minus39-seeds0-2-zero-ft-gpu1-20260809-v1`；
+3. M0-FT 18/18 pipeline-valid 后运行 `m2-interfuser-m0-v-d7-minus39-seeds0-2-zero-ft-gpu1-20260809-v1`。
+
+GPU1 启动前必须连续三次低于 1,024 MiB 且 2155/2255 无监听。任一 attempt pipeline-invalid 仍 fail-fast；smoke 还必须证明 evaluator exit 0、CARLA 由 runner 回收且 GPU1 回落到启动门槛以下，才允许完整批次。
+
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

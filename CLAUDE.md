@@ -32,6 +32,8 @@ configs/thesis/interfuser_visual_initialization_pedestrian_hazard_v1.json - M2 H
 configs/thesis/interfuser_visual_swap_initialization_v1.json - M2 H1 固定历史 M0 底座的 M0-FT/M0-V 单 RGB 骨干替换契约
 configs/thesis/interfuser_visual_swap_route39_m0_ft_v1.json - M2 H1 固定底座 M0-FT 的 route39 seed0 零微调闭环诊断配置
 configs/thesis/interfuser_visual_swap_route39_m0_v_v1.json - M2 H1 语义 RGB 替换 M0-V 的 route39 seed0 零微调闭环诊断配置
+configs/thesis/interfuser_visual_swap_m0_ft_gpu1_v1.json - M2 H1 M0-FT D7-minus-route39 资源迁移配置，固定 GPU1 同卡 agent/CARLA
+configs/thesis/interfuser_visual_swap_m0_v_gpu1_v1.json - M2 H1 M0-V D7-minus-route39 配对资源迁移配置，与 M0-FT 共用 GPU1
 configs/thesis/interfuser_visual_pair_smoke_v1.json - M2 H1 B0/V 配对下游训练链路 smoke 预算、资源和产物契约
 configs/thesis/interfuser_visual_pair_pedestrian_hazard_smoke_v1.json - M2 H1 行人危险骨干 B0/V 配对下游 smoke 契约
 configs/thesis/interfuser_visual_pair_formal_v1.json - M2 H1 B0/V 正式下游训练预算、无泄漏三分索引和资源契约

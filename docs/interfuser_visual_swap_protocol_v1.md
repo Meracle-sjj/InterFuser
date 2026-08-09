@@ -115,6 +115,6 @@ GPU 6/7 被外部作业占用时，smoke 和 v2 都必须等待原冻结资源�
 2. smoke 通过后运行 `m2-interfuser-m0-ft-d7-minus39-seeds0-2-zero-ft-gpu1-20260809-v1`；
 3. M0-FT 18/18 pipeline-valid 后运行 `m2-interfuser-m0-v-d7-minus39-seeds0-2-zero-ft-gpu1-20260809-v1`。
 
-GPU1 启动前必须连续三次低于 1,024 MiB 且 2155/2255 无监听。任一 attempt pipeline-invalid 仍 fail-fast；smoke 还必须证明 evaluator exit 0、CARLA 由 runner 回收且 GPU1 回落到启动门槛以下，才允许完整批次。
+GPU1 启动前必须连续三次低于 1,024 MiB、不存在任何外部 compute owner，且 2155/2255 无监听。任一 attempt pipeline-invalid 仍 fail-fast；smoke 还必须证明 evaluator exit 0、CARLA 由 runner 回收且 GPU1 回落到启动门槛以下，才允许完整批次。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

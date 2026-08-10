@@ -117,4 +117,21 @@ GPU 6/7 被外部作业占用时，smoke 和 v2 都必须等待原冻结资源�
 
 GPU1 启动前必须连续三次低于 1,024 MiB 且 2155/2255 无监听。GPU 资源守卫默认仍拒绝任何已有 compute owner；只有本节的 M0-FT/M0-V GPU1 配置显式设置 `allow_existing_compute_processes_below_threshold=true`，允许总显存未越过 1,024 MiB 的既有 context。任一 attempt pipeline-invalid 仍 fail-fast；smoke 还必须证明 evaluator exit 0、CARLA 由 runner 回收且 GPU1 回落到同一启动门槛以下，才允许完整批次。
 
+## 11. GPU1 v1 清理超时与完整 v2 重跑
+
+GPU1 生命周期 smoke `m2-interfuser-m0-ft-route30-seed1-lifecycle-smoke-gpu1-20260809-v1` 已满足第 10 节准入。随后 M0-FT 正式批次 `m2-interfuser-m0-ft-d7-minus39-seeds0-2-zero-ft-gpu1-20260809-v1` 记录 14/18 个 attempt，其中前 13 个 pipeline-valid，第 14 个 `route_36_seed_1` 已由 evaluator 正常写出单路线结果，但 CARLA 清理后的显存未在默认 60 秒内回落到 1,024 MiB，因 `cleanup_error` 判为 pipeline-invalid 并 fail-fast。
+
+该失败属于退出阶段资源释放超时，不将已落盘驾驶分数改写为有效，也不把 13 个有效前缀与后续运行拼接。v1 目录永久保留并整体排除于 D7 聚合。恢复配置由 v1 原样复制，唯一新增 `runtime.gpu_release_timeout_seconds=300`：
+
+- M0-FT：`configs/thesis/interfuser_visual_swap_m0_ft_gpu1_v2.json`，SHA-256 `075646daf06e552284298bcf9500f0df9fa3a25a2d4fc4fbe7c1db8853156e36`；
+- M0-V：`configs/thesis/interfuser_visual_swap_m0_v_gpu1_v2.json`，SHA-256 `7fd73ad8c133dc7dcc1dfe7735849607793aa4ca3c368645145b1b2e437a2d7e`。
+
+重新准入顺序冻结为：
+
+1. 先运行 `m2-interfuser-m0-ft-route36-seed1-cleanup-smoke-gpu1-20260810-v1`，只复现 `route36 / seed1`；
+2. smoke 必须 evaluator exit 0、结果有效、CARLA 由 runner 回收、GPU1 在 300 秒内回落至门槛以下；
+3. 通过后从头运行 `m2-interfuser-m0-ft-d7-minus39-seeds0-2-zero-ft-gpu1-20260810-v2` 的完整 18 个 attempt；
+4. M0-FT 18/18 pipeline-valid 后才运行 `m2-interfuser-m0-v-d7-minus39-seeds0-2-zero-ft-gpu1-20260810-v2`；
+5. 任一新 attempt pipeline-invalid 仍立即停止并保留原始证据，不原地覆盖、不自动改写模型结果、不跨 run 拼接。
+
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-[INPUT]: 依赖通过 P0 的 baseline_eval JSON、runtime_resources 资源守卫及其默认独占/显式低占用共享策略、CARLA/Leaderboard 运行时与冻结 checkpoint。
-[OUTPUT]: 对外提供 RunnerError、build_run_plan、write_single_route_xml、parse_leaderboard_result、execute_run_plan 与 CLI，生成隔离的 route/seed 原始结果、资源退出状态和显式基础设施失败原因。
+[INPUT]: 依赖通过 P0 的 baseline_eval JSON、runtime_resources 资源守卫及其默认独占/显式低占用共享策略与显存释放默认等待、CARLA/Leaderboard 运行时与冻结 checkpoint。
+[OUTPUT]: 对外提供 RunnerError、build_run_plan、write_single_route_xml、parse_leaderboard_result、execute_run_plan 与 CLI，生成隔离的 route/seed 原始结果，并按配置等待显存释放后记录资源退出状态和显式基础设施失败原因。
 [POS]: tools/evaluation 的 M0 配置驱动 runner，位于静态预检之后、统计汇总之前；用短命子进程隔离 CARLA 原生 RPC 故障，显式 --execute 才启动外部进程。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -32,6 +32,7 @@ from tools.evaluation.preflight_thesis_baseline import (  # noqa: E402
     preflight_baseline,
 )
 from tools.evaluation.runtime_resources import (  # noqa: E402
+    GPU_RELEASE_TIMEOUT_SECONDS,
     RunnerError,
     _GpuMemoryMonitor,
     _stop_process_group,
@@ -216,6 +217,12 @@ def build_run_plan(
         else timeout_seconds,
         "timeout_seconds",
     )
+    gpu_release_timeout_seconds = _positive_int(
+        runtime.get(
+            "gpu_release_timeout_seconds", GPU_RELEASE_TIMEOUT_SECONDS
+        ),
+        "gpu_release_timeout_seconds",
+    )
     background = config["background_vehicles_by_town"]
     allow_opt = bool(config["map_policy"].get("allow_opt_runtime_equivalent"))
     provider_offset = int(runtime["carla_provider_seed_offset"])
@@ -270,6 +277,7 @@ def build_run_plan(
             **runtime,
             "agent_cuda_visible_device": agent_gpu,
             "carla_graphics_adapter": carla_graphics_adapter,
+            "gpu_release_timeout_seconds": gpu_release_timeout_seconds,
         },
         "environment": dict(config.get("environment", {})),
         "attempts": attempts,
@@ -506,6 +514,9 @@ def _execute_attempt(repo_root, plan, run_dir, attempt):
         "gpu_monitor_error": None,
         "port_release_wait_seconds": None,
         "gpu_release_wait_seconds": None,
+        "gpu_release_timeout_seconds": runtime.get(
+            "gpu_release_timeout_seconds", GPU_RELEASE_TIMEOUT_SECONDS
+        ),
         "cleanup_error": None,
         "error": None,
         "leaderboard_result": None,
@@ -629,6 +640,9 @@ def _execute_attempt(repo_root, plan, run_dir, attempt):
                 attempt_manifest["gpu_release_wait_seconds"] = wait_for_gpus_available(
                     gpu_indices,
                     runtime["gpu_busy_memory_threshold_mb"],
+                    timeout_seconds=runtime.get(
+                        "gpu_release_timeout_seconds", GPU_RELEASE_TIMEOUT_SECONDS
+                    ),
                     allow_existing_compute_processes_below_threshold=(
                         allow_existing_compute
                     ),

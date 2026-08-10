@@ -1,6 +1,6 @@
 """
-[INPUT]: 依赖 tools.evaluation.run_thesis_baseline 的计划、路线拆分、独占/受控共享资源门禁、隔离式 CARLA RPC、结果解析、基础设施失败分类和执行编排 API，并使用临时配置构造最小 P0 合法输入。
-[OUTPUT]: 提供 D7 计划、原生 RPC 崩溃隔离、晚发 CARLA 退出分类、驾驶失败保留、共享策略传递、资源释放和 pipeline-invalid 立即终止的回归测试。
+[INPUT]: 依赖 tools.evaluation.run_thesis_baseline 的计划、路线拆分、独占/受控共享资源门禁、可配置显存释放等待、隔离式 CARLA RPC、结果解析、基础设施失败分类和执行编排 API，并使用临时配置构造最小 P0 合法输入。
+[OUTPUT]: 提供 D7 计划、原生 RPC 崩溃隔离、晚发 CARLA 退出分类、驾驶失败保留、共享与清理超时策略传递、资源释放和 pipeline-invalid 立即终止的回归测试。
 [POS]: tests 的 M0 runner 纯逻辑测试，不启动 CARLA；外部进程生命周期由真实单路线 smoke 进一步验证。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -82,6 +82,7 @@ class ThesisBaselineRunnerTests(unittest.TestCase):
                 "carla_start_timeout_seconds": 30,
                 "carla_client_timeout_seconds": 10,
                 "external_route_timeout_seconds": 100,
+                "gpu_release_timeout_seconds": 300,
                 "carla_provider_seed_offset": 2000,
                 "gpu_busy_memory_threshold_mb": 1024,
             },
@@ -135,6 +136,7 @@ class ThesisBaselineRunnerTests(unittest.TestCase):
 
         self.assertEqual(plan["runtime"]["agent_cuda_visible_device"], 2)
         self.assertEqual(plan["runtime"]["carla_graphics_adapter"], 3)
+        self.assertEqual(plan["runtime"]["gpu_release_timeout_seconds"], 300)
         self.assertEqual(len(plan["runner_sha256"]), 64)
         self.assertTrue(plan["python_executable"])
         self.assertEqual(len(plan["attempts"]), 1)

@@ -23,7 +23,7 @@ CLAUDE.md: 实验事实记录模块地图，约束摘要只能引用已完成 ru
 2026-08-04-m2-semantic-pedestrian-hazard-probe-v1.md: M2 行人碰撞威胁 train-only 扩充 probe，固化原 validation、8+8 个 route-group 专项 holdout、InterFuser 严格迁移与下游 smoke。
 2026-08-05-m2-m0-visual-swap-route39-zero-ft.md: M2 固定历史 M0 底座的语义 ResNet50d 零微调替换诊断，固化 route39 三 seed 连续控制帧、闭环配对差值与 D7 准入结论。
 2026-08-08-m2-m0-ft-d7-minus39-v1-carla-late-crash.md: M2 M0-FT D7-minus-route39 首批的 CARLA 晚发段错误，固化原始 M0 行为对齐、有效前缀不拼接、route30 seed1 生命周期 smoke 与完整 v2 重跑门禁。
-2026-08-09-m2-m0-visual-swap-d7-gpu1-resource-migration.md: M2 M0-FT/M0-V D7-minus-route39 的 GPU1 同卡资源迁移记录，固化变更边界、配置哈希、外部 compute owner 拒绝与 smoke 准入门禁。
+2026-08-09-m2-m0-visual-swap-d7-gpu1-resource-migration.md: M2 M0-FT/M0-V D7-minus-route39 的 GPU1 同卡资源迁移记录，固化共享门禁、smoke、M0-FT v1 清理超时、300 秒恢复配置与完整 v2 重跑边界。
 
 记录只陈述事实和结论边界；实验协议归 `../baseline_evaluation_protocol_v1.md`，大体积原始结果归远端 `results/`。
 

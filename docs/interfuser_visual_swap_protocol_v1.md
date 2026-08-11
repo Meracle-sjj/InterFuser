@@ -134,4 +134,23 @@ GPU1 生命周期 smoke `m2-interfuser-m0-ft-route30-seed1-lifecycle-smoke-gpu1-
 4. M0-FT 18/18 pipeline-valid 后才运行 `m2-interfuser-m0-v-d7-minus39-seeds0-2-zero-ft-gpu1-20260810-v2`；
 5. 任一新 attempt pipeline-invalid 仍立即停止并保留原始证据，不原地覆盖、不自动改写模型结果、不跨 run 拼接。
 
+## 12. v2 路线作用域漂移与 v3 机器化恢复
+
+route36/seed1 清理恢复 smoke `m2-interfuser-m0-ft-route36-seed1-cleanup-smoke-gpu1-20260810-v1` 已通过：evaluator exit 0、`pipeline_valid=true`、CARLA 由 runner 回收、GPU1 释放等待 0.315 秒。随后自动门控启动 M0-FT v2 时遗漏了第 8 节冻结的显式路线列表，runner 因而使用 `development_d7` 默认集合，计划了包含 route39 的 21 个 attempt，并首先执行 `route_00_seed_0`。这是实验编排作用域漂移，不是模型或配置比较变量。
+
+该 route0 attempt 持续生成 16,438 个控制帧，在 5,400 秒外部超时后被 runner 终止；没有 CARLA 提前退出或 GPU 清理错误，但 Leaderboard 未写出单路线记录，因此 pipeline-invalid。v2 run 及 1.4 GiB 连续帧证据永久保留，整体排除于 D7 聚合。
+
+为消除对 CLI 手写列表的依赖，v3 配置在 v2 基础上唯一增加 `route_sets.d7_minus_route39=[18,6,12,30,36,0]`：
+
+- M0-FT：`configs/thesis/interfuser_visual_swap_m0_ft_gpu1_v3.json`，SHA-256 `efd023a34f88c72988e1fe713d9b30ae73d648c491b176e6cfcc5265e711afd6`；
+- M0-V：`configs/thesis/interfuser_visual_swap_m0_v_gpu1_v3.json`，SHA-256 `e2654ddb7c42ae29b5fd237b3e0de55820148b7857873914fd6495a993722f7b`。
+
+重新准入顺序冻结为：
+
+1. 先以 `m2-interfuser-m0-ft-route0-seed0-timeout-smoke-gpu1-20260811-v1` 单独重跑 route0/seed0，并保持 5,400 秒外部超时不变；
+2. smoke pipeline-valid 后，以 `--route-set d7_minus_route39` 启动 `m2-interfuser-m0-ft-d7-minus39-seeds0-2-zero-ft-gpu1-20260811-v3`；
+3. 正式 run plan 必须恰有 18 个 attempt，路线顺序严格为 `[18,6,12,30,36,0]`，每条 seeds `[0,1,2]`；
+4. M0-FT 18/18 pipeline-valid 后，以相同 route set 启动 `m2-interfuser-m0-v-d7-minus39-seeds0-2-zero-ft-gpu1-20260811-v3`；
+5. route0 smoke 若再次超时则停止，不把超时放宽或强行归为模型零分，先归因连续控制帧中的长期停车与 Leaderboard blocked 判定缺失。
+
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

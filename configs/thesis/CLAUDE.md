@@ -22,6 +22,8 @@ interfuser_visual_swap_m0_ft_gpu1_v1.json: M2 H1 M0-FT D7-minus-route39 GPU1 首
 interfuser_visual_swap_m0_v_gpu1_v1.json: M2 H1 M0-V D7-minus-route39 GPU1 首次配对配置，复用与 M0-FT 完全相同的同卡资源、受控共享策略与默认清理窗口。
 interfuser_visual_swap_m0_ft_gpu1_v2.json: M2 H1 M0-FT D7-minus-route39 GPU1 清理恢复配置，保持 v1 模型和评测变量，仅将显存释放窗口显式延长至 300 秒。
 interfuser_visual_swap_m0_v_gpu1_v2.json: M2 H1 M0-V D7-minus-route39 GPU1 清理恢复配对配置，与 M0-FT v2 使用相同的 300 秒释放窗口和资源门禁。
+interfuser_visual_swap_m0_ft_gpu1_v3.json: M2 H1 M0-FT D7-minus-route39 GPU1 编排恢复配置，保持 v2 运行口径并把 `[18,6,12,30,36,0]` 固化为专用 route set。
+interfuser_visual_swap_m0_v_gpu1_v3.json: M2 H1 M0-V D7-minus-route39 GPU1 编排恢复配对配置，与 M0-FT v3 共享专用 18-task 路线集合、资源门禁和清理窗口。
 interfuser_visual_pair_smoke_v1.json: M2 H1 配对训练 smoke 配置，冻结无泄漏索引/初始 checkpoint 哈希、各 2 sequence 确定性抽样、相同单 epoch 预算与 GPU 6/7。
 interfuser_visual_pair_pedestrian_hazard_smoke_v1.json: M2 H1 行人危险骨干下游 smoke 配置，复用相同 2+2 sequence、单 epoch 和 GPU 6/7，只替换 V 初始权重。
 interfuser_visual_pair_formal_v1.json: M2 H1 配对正式训练配置，复用上游 2 GPU×batch 16×25 epoch 配方并强制绑定无泄漏 train/validation/test 索引。

@@ -2,13 +2,15 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 状态 | **FROZEN/READY：v1 清理超时已审计，准备 route36/seed1 恢复 smoke 与完整 v2 重跑** |
+| 状态 | **FROZEN/READY：route36 清理恢复已通过，v2 路线漂移已审计，准备 route0 smoke 与严格 18-task v3** |
 | 原资源 | agent GPU6 / CARLA GPU7，已被外部作业各占用约 30.6 GiB |
 | 新资源 | agent GPU1 / CARLA GPU1，RTX 5090 32,607 MiB |
 | M0-FT 配置 | `configs/thesis/interfuser_visual_swap_m0_ft_gpu1_v1.json` / `2be1499a8ed9960934a0cd5131d17885a777e112156474244a2daa8eedf64447` |
 | M0-V 配置 | `configs/thesis/interfuser_visual_swap_m0_v_gpu1_v1.json` / `814a77df6b8f7553df564729ee13fa085ba15563068ad7a38104a996164b4506` |
 | M0-FT 恢复配置 | `configs/thesis/interfuser_visual_swap_m0_ft_gpu1_v2.json` / `075646daf06e552284298bcf9500f0df9fa3a25a2d4fc4fbe7c1db8853156e36` |
 | M0-V 恢复配置 | `configs/thesis/interfuser_visual_swap_m0_v_gpu1_v2.json` / `7fd73ad8c133dc7dcc1dfe7735849607793aa4ca3c368645145b1b2e437a2d7e` |
+| M0-FT 编排恢复配置 | `configs/thesis/interfuser_visual_swap_m0_ft_gpu1_v3.json` / `efd023a34f88c72988e1fe713d9b30ae73d648c491b176e6cfcc5265e711afd6` |
+| M0-V 编排恢复配置 | `configs/thesis/interfuser_visual_swap_m0_v_gpu1_v3.json` / `e2654ddb7c42ae29b5fd237b3e0de55820148b7857873914fd6495a993722f7b` |
 
 ## 1. 迁移原因与边界
 
@@ -63,5 +65,23 @@ GPU1 配置提交 `ed5746b` 后，门控于 2026-08-09 21:30 +08:00 尝试启动
 3. M0-FT 18/18 有效后运行 `m2-interfuser-m0-v-d7-minus39-seeds0-2-zero-ft-gpu1-20260810-v2`。
 
 任一新 attempt 仍按 pipeline-invalid fail-fast。失败 run 只允许生成新 Run ID 重新准入，不覆盖、不 resume、不把有效前缀跨批拼接。
+
+## 9. route36 恢复 smoke 结果
+
+`m2-interfuser-m0-ft-route36-seed1-cleanup-smoke-gpu1-20260810-v1` 于 2026-08-10 17:15–17:44 完成 1/1 pipeline-valid。该 attempt evaluator exit 0、CARLA exit -15 且 `carla_exited_before_cleanup=false`，GPU1 释放等待 0.315 秒，无 cleanup error；Leaderboard 状态为 `Failed - Agent got blocked`，DS 19.1401。300 秒窗口恢复了已知失败点，但实际本次无需消耗扩展窗口。
+
+## 10. M0-FT v2 路线作用域漂移
+
+自动门控在 smoke 通过后启动 `m2-interfuser-m0-ft-d7-minus39-seeds0-2-zero-ft-gpu1-20260810-v2`，但命令遗漏显式 route IDs，runner 按 `development_d7` 生成 21 个 attempt 并从 route0/seed0 开始，而非冻结的 18-task D7-minus-route39 顺序。这是编排脚本错误，v2 不具备正式实验准入资格。
+
+route0/seed0 持续运行 5,449.272 秒并生成 16,438 个连续控制帧，最后 100 帧速度接近 0、98% 帧制动，但没有形成 Leaderboard 单路线记录；runner 在 5,400 秒外部预算处终止 evaluator，记录 exit 124、pipeline-invalid。CARLA 由 runner 回收，GPU 释放等待 0.267 秒，没有复现清理崩溃。门控随后 fail-fast，M0-V 未启动。
+
+v2 原始目录和约 1.4 GiB sensor/control 证据永久保留，不覆盖、不 resume、不进入 D7 聚合。
+
+## 11. v3 路线集合固化与 route0 准入
+
+v3 配置保持 v2 的 checkpoint、代码、GPU1、300 秒清理窗口、5,400 秒外部超时和全部评测变量，只新增机器可读 `d7_minus_route39=[18,6,12,30,36,0]`。正式命令必须通过 `--route-set d7_minus_route39` 消费该集合，run plan 必须在启动前验证为 18 个 attempt。
+
+先运行 `m2-interfuser-m0-ft-route0-seed0-timeout-smoke-gpu1-20260811-v1`。只有它 pipeline-valid，才自动启动 M0-FT v3 完整 18-task；M0-FT 18/18 通过后才启动 M0-V v3。route0 若再次超时则停止归因，不放宽预算以追逐有效结果。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

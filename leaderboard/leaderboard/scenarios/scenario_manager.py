@@ -6,8 +6,10 @@
 # For a copy, see <https://opensource.org/licenses/MIT>.
 
 """
-This module provides the ScenarioManager implementations.
-It must not be modified and is for reference only!
+[INPUT]: 依赖 CARLA 同步 tick、py_trees 行为树、agent wrapper、watchdog 与结果输出器，消费已装配的 Leaderboard scenario。
+[OUTPUT]: 对外提供 ScenarioManager，驱动 agent/世界/行为树逐 tick 执行并在场景终止后归约 criteria 和时钟状态。
+[POS]: leaderboard.scenarios 的执行循环；只消费 RouteScenario 装配的判据，不定义速度或路线进度 blocked 规则。
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
 from __future__ import print_function

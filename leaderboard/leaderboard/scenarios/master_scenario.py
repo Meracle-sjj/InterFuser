@@ -5,7 +5,10 @@
 # For a copy, see <https://opensource.org/licenses/MIT>.
 
 """
-Basic CARLA Autonomous Driving training scenario
+[INPUT]: 依赖 BasicScenario、ScenarioRunner 通用路线 criteria 与 Leaderboard 速度 blocked 判据，消费通用 route configuration。
+[OUTPUT]: 对外提供 MasterScenario，将空闲行为与基础碰撞、偏航、完成度、交通规则和低速终止 criteria 组合为通用评测场景。
+[POS]: leaderboard.scenarios 的非挑战路线兼容入口；论文 D7 使用同目录 RouteScenario，而非本类。
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
 import py_trees

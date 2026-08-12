@@ -6,7 +6,10 @@
 # For a copy, see <https://opensource.org/licenses/MIT>.
 
 """
-This module provides Challenge routes as standalone scenarios
+[INPUT]: 依赖 CARLA、ScenarioRunner 路线行为与原子判据、Leaderboard 路线解析和场景定义，消费冻结路线及背景交通配置。
+[OUTPUT]: 对外提供 RouteScenario、背景交通健康统计与闭环 criteria 组合；blocked 同时约束连续低速和 180 秒内不足 18 米的路线进度。
+[POS]: leaderboard.scenarios 的主路线场景编排器，将 route、动态交通、场景行为和论文闭环终止语义装配为单次 evaluator 运行。
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
 from __future__ import print_function
@@ -44,6 +47,8 @@ from srunner.scenariomanager.scenarioatomics.atomic_criteria import (CollisionTe
                                                                      RunningStopTest,
                                                                      ActorSpeedAboveThresholdTest)
 
+from leaderboard.scenarios.scenarioatomics.atomic_criteria import RouteProgressBlockedTest
+
 from leaderboard.utils.route_parser import RouteParser, TRIGGER_THRESHOLD, TRIGGER_ANGLE_THRESHOLD
 from leaderboard.utils.route_manipulation import interpolate_trajectory
 
@@ -54,6 +59,8 @@ INITIAL_SECONDS_DELAY = 5.0
 BACKGROUND_TRAFFIC_NEAR_ROAD_METERS = 2.0
 BACKGROUND_TRAFFIC_MOVING_METERS_PER_SECOND = 0.5
 BACKGROUND_TRAFFIC_MOVED_METERS = 2.0
+ROUTE_PROGRESS_BLOCKED_SECONDS = 180.0
+ROUTE_PROGRESS_BLOCKED_METERS = 18.0
 
 NUMBER_CLASS_TRANSLATION = {
     "Scenario1": ControlLoss,
@@ -67,6 +74,27 @@ NUMBER_CLASS_TRANSLATION = {
     "Scenario9": SignalJunctionCrossingRoute,
     "Scenario10": NoSignalJunctionCrossingRoute
 }
+
+
+def _build_blocked_criteria(actor, route):
+    """Build both complementary blocked criteria with one frozen policy."""
+    return [
+        ActorSpeedAboveThresholdTest(
+            actor,
+            speed_threshold=0.1,
+            below_threshold_max_time=ROUTE_PROGRESS_BLOCKED_SECONDS,
+            terminate_on_failure=True,
+            name="AgentBlockedTest",
+        ),
+        RouteProgressBlockedTest(
+            actor,
+            route=route,
+            min_progress_meters=ROUTE_PROGRESS_BLOCKED_METERS,
+            max_time_seconds=ROUTE_PROGRESS_BLOCKED_SECONDS,
+            terminate_on_failure=True,
+            name="AgentRouteProgressBlockedTest",
+        ),
+    ]
 
 
 def _measure_background_traffic(actors, world_map, start_locations=None):
@@ -647,11 +675,7 @@ class RouteScenario(BasicScenario):
 
         stop_criterion = RunningStopTest(self.ego_vehicles[0])
 
-        blocked_criterion = ActorSpeedAboveThresholdTest(self.ego_vehicles[0],
-                                                         speed_threshold=0.1,
-                                                         below_threshold_max_time=180.0,
-                                                         terminate_on_failure=True,
-                                                         name="AgentBlockedTest")
+        blocked_criteria = _build_blocked_criteria(self.ego_vehicles[0], route)
 
         criteria.append(completion_criterion)
         criteria.append(outsidelane_criterion)
@@ -659,7 +683,7 @@ class RouteScenario(BasicScenario):
         criteria.append(red_light_criterion)
         criteria.append(stop_criterion)
         criteria.append(route_criterion)
-        criteria.append(blocked_criterion)
+        criteria.extend(blocked_criteria)
 
         return criteria
 

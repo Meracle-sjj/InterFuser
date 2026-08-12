@@ -19,6 +19,7 @@ test_profile_traffic_element_routes.py: 验证路线交通灯覆盖、hard-negat
 test_preflight_thesis_baseline.py: 验证 M0 静态预检对哈希、路线分区、场景事件和地图排除的约束。
 test_recompute_painted_line_status.py: 验证实体标线 dry-run 的图像证据、深度和只读约束。
 test_red_light_junction_gate.py: 验证控制器路口概率来源对红灯制动门控的历史兼容行为。
+test_route_progress_blocked.py: 验证 180 秒内不足 18 米的路线进度停滞会生成 VEHICLE_BLOCKED，且短促强制油门不能重置判定。
 test_render_traffic_element_overlays.py: 验证复核 overlay 的目标选择、颜色语义与 manifest 输出。
 test_run_thesis_baseline.py: 验证 D7 runner 的路线拆分、CARLA 原生 RPC 崩溃隔离、晚发 CARLA 退出分类、结果解析、独占/共享资源门禁、可配置显存释放等待和 pipeline-invalid 立即终止。
 test_semantic_split_and_review.py: 验证 M1 split 的 Town+route 原子性、三组核心类别覆盖、内容哈希、RGB/mask 尺寸门禁与人工复核证据渲染。

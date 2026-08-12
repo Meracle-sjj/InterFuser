@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-[INPUT]: 依赖一个或多个完整 run_manifest.json 及其同目录 baseline_eval_config.json，消费冻结路线、随机种子、指标与输入哈希。
+[INPUT]: 依赖一个或多个完整 run_manifest.json 及其同目录 baseline_eval_config.json，消费冻结路线、随机种子、指标、模型输入哈希与路线进度 blocked 判据哈希。
 [OUTPUT]: 对外提供 SummaryError、build_summary、write_summary 与 CLI，生成确定性三种子路线宏平均、种子波动、失败类型和资源证据 JSON。
 [POS]: tools/evaluation 的 M0 纯离线汇总器，位于 runner 之后、论文实验记录之前；默认拒绝缺失、重复、pipeline-invalid 与未授权输入漂移。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -31,6 +31,7 @@ CONTRACT_INPUTS = (
     "model_definition",
     "leaderboard_evaluator",
     "leaderboard_route_scenario",
+    "leaderboard_progress_criteria",
     "scenario_runner_route_scenario",
 )
 

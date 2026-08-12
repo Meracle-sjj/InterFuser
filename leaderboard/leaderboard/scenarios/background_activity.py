@@ -5,7 +5,10 @@
 # For a copy, see <https://opensource.org/licenses/MIT>.
 
 """
-Scenario spawning elements to make the town dynamic and interesting
+[INPUT]: 依赖 CARLA actor API、CarlaDataProvider 与 BasicScenario，消费 Town 和背景交通参与者配置。
+[OUTPUT]: 对外提供 BackgroundActivity 场景，按 Town 生成动态车辆并回收长期拥堵的非 ego 参与者。
+[POS]: leaderboard.scenarios 的背景交通供给层，为 RouteScenario 提供可重复的交通密度而不参与 ego blocked 判定。
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
 import carla

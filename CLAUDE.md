@@ -38,6 +38,8 @@ configs/thesis/interfuser_visual_swap_m0_ft_gpu1_v2.json - M2 H1 M0-FT GPU1 清�
 configs/thesis/interfuser_visual_swap_m0_v_gpu1_v2.json - M2 H1 M0-V GPU1 清理恢复配对配置，与 M0-FT v2 保持相同资源口径
 configs/thesis/interfuser_visual_swap_m0_ft_gpu1_v3.json - M2 H1 M0-FT GPU1 编排恢复配置，机器级固化 D7-minus-route39 的路线集合与顺序
 configs/thesis/interfuser_visual_swap_m0_v_gpu1_v3.json - M2 H1 M0-V GPU1 编排恢复配对配置，与 M0-FT v3 共享严格 18-task 口径
+configs/thesis/interfuser_visual_swap_m0_ft_gpu1_v4.json - M2 H1 M0-FT 路线进度判停恢复配置，在统一新 evaluator 下固化完整 D7 的 21-task 口径
+configs/thesis/interfuser_visual_swap_m0_v_gpu1_v4.json - M2 H1 M0-V 路线进度判停恢复配对配置，与 M0-FT v4 共享代码、资源和完整 D7 顺序
 configs/thesis/interfuser_visual_pair_smoke_v1.json - M2 H1 B0/V 配对下游训练链路 smoke 预算、资源和产物契约
 configs/thesis/interfuser_visual_pair_pedestrian_hazard_smoke_v1.json - M2 H1 行人危险骨干 B0/V 配对下游 smoke 契约
 configs/thesis/interfuser_visual_pair_formal_v1.json - M2 H1 B0/V 正式下游训练预算、无泄漏三分索引和资源契约

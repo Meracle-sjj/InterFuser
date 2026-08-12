@@ -153,4 +153,28 @@ route36/seed1 清理恢复 smoke `m2-interfuser-m0-ft-route36-seed1-cleanup-smok
 4. M0-FT 18/18 pipeline-valid 后，以相同 route set 启动 `m2-interfuser-m0-v-d7-minus39-seeds0-2-zero-ft-gpu1-20260811-v3`；
 5. route0 smoke 若再次超时则停止，不把超时放宽或强行归为模型零分，先归因连续控制帧中的长期停车与 Leaderboard blocked 判定缺失。
 
+## 13. v3 route0 重复超时与 v4 路线进度判停
+
+v3 准入 smoke `m2-interfuser-m0-ft-route0-seed0-timeout-smoke-gpu1-20260811-v1` 再次运行 5,751.222 秒，记录 16,189 个连续控制帧，最终由 5,400 秒外部预算终止，evaluator exit 124 且没有单路线结果。退出后 GPU1 在 300 秒内仍为 2,153 MiB，故 cleanup 同时无效；该晚释放事实不改变“第二次 route0 已先超时”的主因。v3 smoke 与 v2 误启动 run 均永久保留且不进入聚合。
+
+两次独立 route0/seed0 的连续帧和控制记录给出一致证据：道路中存在真实车辆排队，不是凭单帧臆测出的虚假障碍；16,438/16,189 帧中速度低于 0.1 m/s 的比例分别为 86.8%/87.4%，`d_0=0` 的比例为 48.0%/49.5%。控制器在 `stop_steps>1200` 后分别触发 10/11 次、每次 12 帧的 0.8 油门强制前进。该短促脉冲会让上游“速度连续低于 0.1 m/s 达 180 秒”的 blocked 计时反复复位，却不能形成足够路线进度，因而让已确定失败的路线悬挂到外部超时。
+
+v4 不修改模型、checkpoint、控制器、交通量或外部超时，只在 Leaderboard RouteScenario 中并列增加 `RouteProgressBlockedTest`：以插值 route 的累积弧长度量进度，若任意连续 180 个仿真秒内净前进不足 18 米，记录包含窗口、阈值和位置的 `VEHICLE_BLOCKED` 事件并终止场景。18 米/180 秒等价于原速度判据 0.1 m/s 的窗口平均下界，但不会被数帧高速度或原地挪动清零；原速度判据仍保留，用于捕获真正连续静止。
+
+机器可读 v4 契约为：
+
+- M0-FT：`configs/thesis/interfuser_visual_swap_m0_ft_gpu1_v4.json`，SHA-256 `f348732884471d08db018fb3f01f1405470afe93a07c9568d1800c58c3358167`；
+- M0-V：`configs/thesis/interfuser_visual_swap_m0_v_gpu1_v4.json`，SHA-256 `7d95197c9620a7ba31d24c8cbbd17c6e79bb472d71d609ca74022cf379412611`；
+- runtime code anchor：`d6bf596a403b0765943044b8a913302f9f8031a1`；
+- 判据源码 SHA-256：`efb4f1fb49feba24dfcab3a4edcbe4d92c8c22cbfcac4d8c476dab7d2fdcc604`；
+- RouteScenario SHA-256：`1ac7cb505e5e332a2cd6eff443841d076457a59b964689c681a68d85fc9685ce`。
+
+判停语义已经改变，因此不再把旧 evaluator 下的 route39 三 seed 与新结果拼接。v4 在同一代码锚点下完整重跑 `[18,6,12,30,36,0,39] × [0,1,2]`：
+
+1. 先运行 `m2-interfuser-m0-ft-route0-seed0-progress-blocked-smoke-gpu1-20260812-v1`；
+2. smoke 必须在外部超时前产生单路线结果、`pipeline_valid=true`，且若 route 未完成，须包含路线进度停滞的 `VEHICLE_BLOCKED` 证据；
+3. 通过后运行 `m2-interfuser-m0-ft-d7-seeds0-2-zero-ft-progress-blocked-gpu1-20260812-v4` 的完整 21 个 attempt；
+4. M0-FT 21/21 pipeline-valid 后运行配对的 `m2-interfuser-m0-v-d7-seeds0-2-zero-ft-progress-blocked-gpu1-20260812-v4`；
+5. 任一 attempt pipeline-invalid 继续 fail-fast；blocked 是有效闭环失败而非基础设施失败，必须进入 DS/RC/IS 聚合，不能以超时或缺失结果静默丢弃。
+
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

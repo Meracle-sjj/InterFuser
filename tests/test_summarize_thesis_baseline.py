@@ -37,6 +37,7 @@ class ThesisBaselineSummaryTests(unittest.TestCase):
                 "model_definition",
                 "leaderboard_evaluator",
                 "leaderboard_route_scenario",
+                "leaderboard_progress_criteria",
                 "scenario_runner_route_scenario",
             )
         }

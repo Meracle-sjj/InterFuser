@@ -2,7 +2,7 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 状态 | **FROZEN/READY：route36 清理恢复已通过，v2 路线漂移已审计，准备 route0 smoke 与严格 18-task v3** |
+| 状态 | **FROZEN/WAITING-GPU：v3 route0 重复超时已归因，v4 路线进度判停已冻结，等待 GPU1 后重新准入** |
 | 原资源 | agent GPU6 / CARLA GPU7，已被外部作业各占用约 30.6 GiB |
 | 新资源 | agent GPU1 / CARLA GPU1，RTX 5090 32,607 MiB |
 | M0-FT 配置 | `configs/thesis/interfuser_visual_swap_m0_ft_gpu1_v1.json` / `2be1499a8ed9960934a0cd5131d17885a777e112156474244a2daa8eedf64447` |
@@ -11,6 +11,8 @@
 | M0-V 恢复配置 | `configs/thesis/interfuser_visual_swap_m0_v_gpu1_v2.json` / `7fd73ad8c133dc7dcc1dfe7735849607793aa4ca3c368645145b1b2e437a2d7e` |
 | M0-FT 编排恢复配置 | `configs/thesis/interfuser_visual_swap_m0_ft_gpu1_v3.json` / `efd023a34f88c72988e1fe713d9b30ae73d648c491b176e6cfcc5265e711afd6` |
 | M0-V 编排恢复配置 | `configs/thesis/interfuser_visual_swap_m0_v_gpu1_v3.json` / `e2654ddb7c42ae29b5fd237b3e0de55820148b7857873914fd6495a993722f7b` |
+| M0-FT 判停恢复配置 | `configs/thesis/interfuser_visual_swap_m0_ft_gpu1_v4.json` / `f348732884471d08db018fb3f01f1405470afe93a07c9568d1800c58c3358167` |
+| M0-V 判停恢复配置 | `configs/thesis/interfuser_visual_swap_m0_v_gpu1_v4.json` / `7d95197c9620a7ba31d24c8cbbd17c6e79bb472d71d609ca74022cf379412611` |
 
 ## 1. 迁移原因与边界
 
@@ -83,5 +85,13 @@ v2 原始目录和约 1.4 GiB sensor/control 证据永久保留，不覆盖、�
 v3 配置保持 v2 的 checkpoint、代码、GPU1、300 秒清理窗口、5,400 秒外部超时和全部评测变量，只新增机器可读 `d7_minus_route39=[18,6,12,30,36,0]`。正式命令必须通过 `--route-set d7_minus_route39` 消费该集合，run plan 必须在启动前验证为 18 个 attempt。
 
 先运行 `m2-interfuser-m0-ft-route0-seed0-timeout-smoke-gpu1-20260811-v1`。只有它 pipeline-valid，才自动启动 M0-FT v3 完整 18-task；M0-FT 18/18 通过后才启动 M0-V v3。route0 若再次超时则停止归因，不放宽预算以追逐有效结果。
+
+## 12. v3 route0 复现、根因与 v4 恢复
+
+v3 route0 smoke 于 2026-08-11 再次命中 5,400 秒外部超时：运行 5,751.222 秒、evaluator exit 124、无单路线记录、`pipeline_valid=false`。该 run 有 16,189 帧；v2 的独立同路线 run 有 16,438 帧。两次低速帧比例为 87.4%/86.8%，`d_0=0` 比例为 49.5%/48.0%，连续图像均显示真实交通排队。控制器为了脱困分别执行 11/10 次短促强制前进，恰好反复清空只看速度的 180 秒 blocked 计时，因此“长期停车”实质是评测终止条件被已有脱困策略绕过，而不是路线仍在持续推进。
+
+恢复提交 `d6bf596a403b0765943044b8a913302f9f8031a1` 增加沿插值 route 累积弧长的独立判据：连续 180 个仿真秒净进度不足 18 米时产生 `VEHICLE_BLOCKED` 并终止。控制器、模型和交通配置均未改变；单元测试覆盖短促脉冲仍失败、达到阈值不误杀、后续窗口可再判停，以及 RouteScenario 同时安装速度/进度两套判据。
+
+由于 evaluator 输入哈希已变化，本轮弃用“新 18-task + 旧 route39”的拼接方案，改为 M0-FT/M0-V 都在 v4 下完整重跑 21 个 attempt。准入顺序为 route0/seed0 v4 smoke → M0-FT 完整 D7 → M0-V 完整 D7；当前 GPU1 使用约 10 GiB，高于 1,024 MiB 门槛，因此只等待，不终止外部进程、不抢占启动。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

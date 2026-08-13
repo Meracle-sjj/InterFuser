@@ -177,4 +177,32 @@ v4 不修改模型、checkpoint、控制器、交通量或外部超时，只在 
 4. M0-FT 21/21 pipeline-valid 后运行配对的 `m2-interfuser-m0-v-d7-seeds0-2-zero-ft-progress-blocked-gpu1-20260812-v4`；
 5. 任一 attempt pipeline-invalid 继续 fail-fast；blocked 是有效闭环失败而非基础设施失败，必须进入 DS/RC/IS 聚合，不能以超时或缺失结果静默丢弃。
 
+## 14. v4 共享卡清理误判与 v5 容量式资源所有权
+
+v4 route0 smoke `m2-interfuser-m0-ft-route0-seed0-progress-blocked-smoke-gpu1-20260812-v1` 完成 1/1 pipeline-valid：427.55 个仿真秒时记录路线进度 `17.22 m / 180.0 s`，生成明确的 route-progress `VEHICLE_BLOCKED`，evaluator exit 0，证明第 13 节判停修复有效。
+
+随后 M0-FT v4 完整 D7 运行记录 8/21 attempt：前 7 个 pipeline-valid；第 8 个 route12/seed1 的 evaluator exit 0、Leaderboard 结果有效、CARLA 由 runner 回收，但外部用户进程在该 attempt 运行中加入 GPU1，导致整卡清理后仍使用 2,491 MiB。v4 的“整卡必须回到 1,024 MiB 以下”无法区分外部共享 owner 与本项目残留，因而把一个有效驾驶结果误判为 cleanup failure。该批次永久保留，整体不进入正式聚合。
+
+v5 保留 checkpoint、模型、交通、路线进度判据与完整 D7，只替换资源生命周期契约：
+
+- 启动判据为 GPU1 至少剩余 12,288 MiB，而非整卡低于 1,024 MiB；历史本项目峰值 7,268 MiB，保留约 5 GiB 额外余量；
+- 外部 compute owner 被允许存在，其显存只记录为 before/peak/after provenance；
+- 清理成败只绑定 runner 创建的 evaluator/CARLA POSIX 进程组、这些进程组下捕获到的 GPU PID，以及 2155/2255 端口；
+- 外部任务在 attempt 中途启动或调整显存，不再被归为本项目泄漏；本项目 GPU PID 未释放仍在 300 秒后 fail-fast；
+- 汇总器严格比较模型与评测 runtime，资源调度字段单独留作 provenance，不让“GPU 怎么分配”伪装成“驾驶语义改变”。
+
+机器可读 v5 契约为：
+
+- M0-FT：`configs/thesis/interfuser_visual_swap_m0_ft_gpu1_v5.json`，SHA-256 `e12f0d9de71ae44f882d9ae4f39aec99881bd30dc746ef712785efbdbbbce52c`；
+- M0-V：`configs/thesis/interfuser_visual_swap_m0_v_gpu1_v5.json`，SHA-256 `e0e20158c9f4be8d921127a4196b96dd69708615d5f0f4e2aa243a23b719b8c8`；
+- runtime code anchor：`a718da465497933c151af43d071b7541443682cc`；
+- 资源策略：`shared_capacity`，`gpu_minimum_free_memory_mb=12288`。
+
+route0 v4 smoke 已在相同模型/evaluator 下证明判停，因此 v5 不重复消费该 smoke。执行顺序冻结为：
+
+1. 从头运行 `m2-interfuser-m0-ft-d7-seeds0-2-zero-ft-progress-blocked-shared-gpu1-20260813-v5` 的完整 21 个 attempt；
+2. M0-FT 21/21 pipeline-valid 后运行 `m2-interfuser-m0-v-d7-seeds0-2-zero-ft-progress-blocked-shared-gpu1-20260813-v5`；
+3. 每个 attempt 启动前重新检查 12 GiB 空闲；不足时该 attempt 不启动且 run fail-fast，禁止用 OOM 换取吞吐；
+4. v4 的 7 个有效前缀不与 v5 拼接，v5 两个 variant 都从头使用同一资源规则。
+
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

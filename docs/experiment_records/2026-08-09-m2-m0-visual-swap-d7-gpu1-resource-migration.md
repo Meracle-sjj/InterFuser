@@ -2,7 +2,7 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 状态 | **FROZEN/WAITING-GPU：v3 route0 重复超时已归因，v4 路线进度判停已冻结，等待 GPU1 后重新准入** |
+| 状态 | **FROZEN/RUNNING：v4 判停 smoke 已通过，整卡 1 GiB 清理误判已修复，v5 共享容量完整重跑** |
 | 原资源 | agent GPU6 / CARLA GPU7，已被外部作业各占用约 30.6 GiB |
 | 新资源 | agent GPU1 / CARLA GPU1，RTX 5090 32,607 MiB |
 | M0-FT 配置 | `configs/thesis/interfuser_visual_swap_m0_ft_gpu1_v1.json` / `2be1499a8ed9960934a0cd5131d17885a777e112156474244a2daa8eedf64447` |
@@ -13,6 +13,8 @@
 | M0-V 编排恢复配置 | `configs/thesis/interfuser_visual_swap_m0_v_gpu1_v3.json` / `e2654ddb7c42ae29b5fd237b3e0de55820148b7857873914fd6495a993722f7b` |
 | M0-FT 判停恢复配置 | `configs/thesis/interfuser_visual_swap_m0_ft_gpu1_v4.json` / `f348732884471d08db018fb3f01f1405470afe93a07c9568d1800c58c3358167` |
 | M0-V 判停恢复配置 | `configs/thesis/interfuser_visual_swap_m0_v_gpu1_v4.json` / `7d95197c9620a7ba31d24c8cbbd17c6e79bb472d71d609ca74022cf379412611` |
+| M0-FT 共享恢复配置 | `configs/thesis/interfuser_visual_swap_m0_ft_gpu1_v5.json` / `e12f0d9de71ae44f882d9ae4f39aec99881bd30dc746ef712785efbdbbbce52c` |
+| M0-V 共享恢复配置 | `configs/thesis/interfuser_visual_swap_m0_v_gpu1_v5.json` / `e0e20158c9f4be8d921127a4196b96dd69708615d5f0f4e2aa243a23b719b8c8` |
 
 ## 1. 迁移原因与边界
 
@@ -93,5 +95,15 @@ v3 route0 smoke 于 2026-08-11 再次命中 5,400 秒外部超时：运行 5,751
 恢复提交 `d6bf596a403b0765943044b8a913302f9f8031a1` 增加沿插值 route 累积弧长的独立判据：连续 180 个仿真秒净进度不足 18 米时产生 `VEHICLE_BLOCKED` 并终止。控制器、模型和交通配置均未改变；单元测试覆盖短促脉冲仍失败、达到阈值不误杀、后续窗口可再判停，以及 RouteScenario 同时安装速度/进度两套判据。
 
 由于 evaluator 输入哈希已变化，本轮弃用“新 18-task + 旧 route39”的拼接方案，改为 M0-FT/M0-V 都在 v4 下完整重跑 21 个 attempt。准入顺序为 route0/seed0 v4 smoke → M0-FT 完整 D7 → M0-V 完整 D7；当前 GPU1 使用约 10 GiB，高于 1,024 MiB 门槛，因此只等待，不终止外部进程、不抢占启动。
+
+## 13. v4 判停 smoke 通过与共享清理误判
+
+GPU1 于 2026-08-13 06:23 +08:00 达到原门槛，v4 route0 smoke 随即启动并于 07:08 完成。它在连续 180 仿真秒仅前进 17.22 米时生成 route-progress blocked 事件，1/1 pipeline-valid，证明长期停车已从外部超时恢复为可归约驾驶失败。
+
+M0-FT v4 于 07:09 启动，前 7 个 attempt 全部 pipeline-valid。route12/seed1 于 08:21 开始、08:59 evaluator 正常结束，Leaderboard 状态 `Failed - Agent timed out`、DS 28.6038；但外部训练进程于 08:33 加入 GPU1，整卡清理后为 2,491 MiB，旧 1,024 MiB 绝对门槛遂把该 attempt 判为 pipeline-invalid。该事实不是显存不足、模型失败或 CARLA 残留，而是共享资源所有权未建模；v4 8 个记录及 7 个有效前缀均不拼接。
+
+提交 `a718da465497933c151af43d071b7541443682cc` 引入 v5 共享容量策略：启动至少保留 12 GiB；退出只等待 runner 所属 GPU PID、进程组和端口，外部 GPU 进程只记录不阻断。GPU1 在实现时仍有约 27 GiB 空闲，显著覆盖本项目历史 7.3 GiB 峰值，因此继续使用 GPU1 优于迁往已占 29–32 GiB 的 GPU2–7 或承载长期 CARLA 的 GPU0。
+
+v5 从头运行 M0-FT 21-task，通过后运行配对 M0-V 21-task；两者都使用相同 shared-capacity 配置。v4 route0 smoke 作为判停准入证据保留，但 v4 正式前缀不进入 v5 D7 聚合。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

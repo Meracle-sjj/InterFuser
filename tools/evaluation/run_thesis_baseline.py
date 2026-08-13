@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-[INPUT]: 依赖通过 P0 的 baseline_eval JSON、runtime_resources 资源守卫及其默认独占/显式低占用共享策略与显存释放默认等待、CARLA/Leaderboard 运行时与冻结 checkpoint。
-[OUTPUT]: 对外提供 RunnerError、build_run_plan、write_single_route_xml、parse_leaderboard_result、execute_run_plan 与 CLI，生成隔离的 route/seed 原始结果，并按配置等待显存释放后记录资源退出状态和显式基础设施失败原因。
+[INPUT]: 依赖通过 P0 的 baseline_eval JSON、runtime_resources 独占阈值/共享容量资源守卫、CARLA/Leaderboard 运行时与冻结 checkpoint。
+[OUTPUT]: 对外提供 RunnerError、build_run_plan、write_single_route_xml、parse_leaderboard_result、execute_run_plan 与 CLI，生成隔离的 route/seed 原始结果，并以端口、进程组和本项目 GPU PID 证明共享卡清理完成。
 [POS]: tools/evaluation 的 M0 配置驱动 runner，位于静态预检之后、统计汇总之前；用短命子进程隔离 CARLA 原生 RPC 故障，显式 --execute 才启动外部进程。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -10,7 +10,6 @@ import argparse
 import copy
 import hashlib
 import json
-import os
 import re
 import shutil
 import socket
@@ -31,14 +30,24 @@ from tools.evaluation.preflight_thesis_baseline import (  # noqa: E402
     PreflightError,
     preflight_baseline,
 )
+from tools.evaluation.carla_runtime import (  # noqa: E402
+    build_evaluator_command as _evaluator_command,
+    build_python_environment as _python_environment,
+    run_carla_startup_rpc as _run_carla_startup_rpc,
+    wait_for_carla as _wait_for_carla,
+)
 from tools.evaluation.runtime_resources import (  # noqa: E402
     GPU_RELEASE_TIMEOUT_SECONDS,
     RunnerError,
     _GpuMemoryMonitor,
+    _gpu_memory_usage,
     _stop_process_group,
     ensure_gpus_available,
+    ensure_gpus_have_free_memory,
     ensure_ports_free,
+    gpu_processes_in_process_groups,
     wait_for_gpus_available,
+    wait_for_gpu_processes_exit,
     wait_for_ports_free,
 )
 
@@ -46,29 +55,18 @@ from tools.evaluation.runtime_resources import (  # noqa: E402
 RUN_PLAN_SCHEMA_VERSION = 1
 RUN_MANIFEST_SCHEMA_VERSION = 1
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$")
-CARLA_MAP_MARKER = "CARLA_STARTUP_MAP="
-CARLA_STARTUP_RPC = r"""
-import sys
-from pathlib import Path
-
-repo_root = Path(sys.argv[1])
-for path in (
-    repo_root / "carla" / "PythonAPI",
-    repo_root / "carla" / "PythonAPI" / "carla",
-):
-    sys.path.insert(0, str(path))
-
-import carla
-
-client = carla.Client("127.0.0.1", int(sys.argv[2]))
-client.set_timeout(float(sys.argv[3]))
-world = client.load_world(sys.argv[4]) if len(sys.argv) == 5 else client.get_world()
-print("CARLA_STARTUP_MAP=" + world.get_map().name, flush=True)
-"""
-
-
+GPU_RESOURCE_POLICIES = ("exclusive_threshold", "shared_capacity")
 def _utc_now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def _gpu_resource_policy(runtime):
+    policy = runtime.get("gpu_resource_policy", "exclusive_threshold")
+    if policy not in GPU_RESOURCE_POLICIES:
+        raise RunnerError(
+            f"gpu_resource_policy must be one of {GPU_RESOURCE_POLICIES}: {policy}"
+        )
+    return policy
 
 
 def _read_json(path):
@@ -223,6 +221,12 @@ def build_run_plan(
         ),
         "gpu_release_timeout_seconds",
     )
+    gpu_resource_policy = _gpu_resource_policy(runtime)
+    if gpu_resource_policy == "shared_capacity":
+        _positive_int(
+            runtime.get("gpu_minimum_free_memory_mb"),
+            "gpu_minimum_free_memory_mb",
+        )
     background = config["background_vehicles_by_town"]
     allow_opt = bool(config["map_policy"].get("allow_opt_runtime_equivalent"))
     provider_offset = int(runtime["carla_provider_seed_offset"])
@@ -278,6 +282,7 @@ def build_run_plan(
             "agent_cuda_visible_device": agent_gpu,
             "carla_graphics_adapter": carla_graphics_adapter,
             "gpu_release_timeout_seconds": gpu_release_timeout_seconds,
+            "gpu_resource_policy": gpu_resource_policy,
         },
         "environment": dict(config.get("environment", {})),
         "attempts": attempts,
@@ -366,122 +371,9 @@ def _finalize_pipeline_status(attempt_manifest):
         attempt_manifest["error"] = _pipeline_failure_reason(attempt_manifest)
 
 
-def _python_environment(repo_root, plan, attempt, save_path):
-    env = os.environ.copy()
-    runtime = plan["runtime"]
-    env.update({str(key): str(value) for key, value in plan["environment"].items()})
-    env.update(
-        {
-            "CUDA_VISIBLE_DEVICES": str(runtime["agent_cuda_visible_device"]),
-            "INTERFUSER_MODEL_PATH": plan["checkpoint_path"],
-            "INTERFUSER_BG_VEHICLES": str(attempt["background_vehicles"]),
-            "SAVE_PATH": str(save_path),
-            "CARLA_ROOT": str(repo_root / "carla"),
-            "SCENARIO_RUNNER_ROOT": str(repo_root / "scenario_runner"),
-            "LEADERBOARD_ROOT": str(repo_root / "leaderboard"),
-            "PYTHONUNBUFFERED": "1",
-            "PYGAME_HIDE_SUPPORT_PROMPT": "1",
-            "MALLOC_TRIM_THRESHOLD_": "100000",
-        }
-    )
-    python_paths = [
-        repo_root / "interfuser",
-        repo_root / "carla" / "PythonAPI",
-        repo_root / "carla" / "PythonAPI" / "examples",
-        repo_root / "carla" / "PythonAPI" / "carla",
-        repo_root / "leaderboard",
-        repo_root / "leaderboard" / "team_code",
-        repo_root / "scenario_runner",
-        repo_root,
-    ]
-    if env.get("PYTHONPATH"):
-        python_paths.append(Path(env["PYTHONPATH"]))
-    env["PYTHONPATH"] = os.pathsep.join(str(path) for path in python_paths)
-    prefix = Path(sys.prefix)
-    library_paths = [prefix / "lib"]
-    library_paths.extend((prefix / "lib" / "python3.10" / "site-packages" / "nvidia").glob("*/lib"))
-    if env.get("LD_LIBRARY_PATH"):
-        library_paths.append(Path(env["LD_LIBRARY_PATH"]))
-    env["LD_LIBRARY_PATH"] = os.pathsep.join(str(path) for path in library_paths)
-    return env
-
-
-def _run_carla_startup_rpc(repo_root, port, timeout_seconds, runtime_map=None):
-    """Keep CARLA native client aborts outside the long-lived runner process."""
-    command = [
-        sys.executable,
-        "-c",
-        CARLA_STARTUP_RPC,
-        str(repo_root),
-        str(port),
-        str(timeout_seconds),
-    ]
-    if runtime_map is not None:
-        command.append(str(runtime_map))
-    try:
-        result = subprocess.run(
-            command,
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=max(10.0, float(timeout_seconds) + 5.0),
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise RunnerError(
-            f"CARLA startup RPC exceeded {timeout_seconds} seconds"
-        ) from exc
-    if result.returncode != 0:
-        detail = result.stderr.strip().splitlines()
-        suffix = detail[-1] if detail else "no stderr"
-        raise RunnerError(
-            f"CARLA startup RPC exited with code {result.returncode}: {suffix}"
-        )
-    for line in reversed(result.stdout.splitlines()):
-        if line.startswith(CARLA_MAP_MARKER):
-            return line[len(CARLA_MAP_MARKER) :]
-    raise RunnerError("CARLA startup RPC returned no map name")
-
-
-def _wait_for_carla(repo_root, process, port, timeout_seconds):
-    deadline = time.monotonic() + timeout_seconds
-    last_error = None
-    while time.monotonic() < deadline:
-        if process.poll() is not None:
-            raise RunnerError(f"CARLA exited during startup with code {process.returncode}")
-        try:
-            return _run_carla_startup_rpc(repo_root, port, 2)
-        except Exception as exc:  # CARLA raises version-specific RPC exceptions.
-            last_error = exc
-            time.sleep(2)
-    raise RunnerError(f"CARLA did not become ready: {last_error}")
-
-
-def _evaluator_command(repo_root, plan, attempt, route_path, result_path):
-    runtime = plan["runtime"]
-    return [
-        sys.executable,
-        str(repo_root / "leaderboard" / "leaderboard" / "leaderboard_evaluator.py"),
-        f"--scenarios={plan['scenarios_path']}",
-        f"--routes={route_path}",
-        "--repetitions=1",
-        "--track=SENSORS",
-        f"--checkpoint={result_path}",
-        f"--agent={plan['agent_path']}",
-        f"--agent-config={plan['agent_config_path']}",
-        "--debug=0",
-        "--record=",
-        "--resume=False",
-        f"--port={runtime['carla_port']}",
-        f"--trafficManagerPort={runtime['traffic_manager_port']}",
-        f"--trafficManagerSeed={attempt['traffic_manager_seed']}",
-        f"--carlaProviderSeed={attempt['carla_provider_seed']}",
-        f"--timeout={runtime['carla_client_timeout_seconds']}",
-    ]
-
-
 def _execute_attempt(repo_root, plan, run_dir, attempt):
     runtime = plan["runtime"]
+    gpu_resource_policy = _gpu_resource_policy(runtime)
     allow_existing_compute = bool(
         runtime.get("allow_existing_compute_processes_below_threshold", False)
     )
@@ -510,7 +402,9 @@ def _execute_attempt(repo_root, plan, run_dir, attempt):
         "evaluator_pid": None,
         "duration_seconds": None,
         "gpu_memory_before_mb": None,
+        "gpu_memory_after_mb": None,
         "gpu_peak_memory_mb": None,
+        "gpu_owned_compute_processes": [],
         "gpu_monitor_error": None,
         "port_release_wait_seconds": None,
         "gpu_release_wait_seconds": None,
@@ -536,15 +430,22 @@ def _execute_attempt(repo_root, plan, run_dir, attempt):
     evaluator_log = (attempt_dir / "evaluator.log").open("w", encoding="utf-8")
     try:
         ensure_ports_free([runtime["carla_port"], runtime["traffic_manager_port"]])
-        attempt_manifest["gpu_memory_before_mb"] = {
-            str(index): value
-            for index, value in ensure_gpus_available(
+        if gpu_resource_policy == "shared_capacity":
+            gpu_usage = ensure_gpus_have_free_memory(
+                gpu_indices,
+                runtime["gpu_minimum_free_memory_mb"],
+            )
+        else:
+            gpu_usage = ensure_gpus_available(
                 gpu_indices,
                 runtime["gpu_busy_memory_threshold_mb"],
                 allow_existing_compute_processes_below_threshold=(
                     allow_existing_compute
                 ),
-            ).items()
+            )
+        attempt_manifest["gpu_memory_before_mb"] = {
+            str(index): value
+            for index, value in gpu_usage.items()
             if index in gpu_indices
         }
         gpu_monitor.start()
@@ -617,6 +518,20 @@ def _execute_attempt(repo_root, plan, run_dir, attempt):
         attempt_manifest["error"] = f"{type(exc).__name__}: {exc}"
     finally:
         cleanup_errors = []
+        if gpu_resource_policy == "shared_capacity":
+            try:
+                attempt_manifest["gpu_owned_compute_processes"] = (
+                    gpu_processes_in_process_groups(
+                        gpu_indices,
+                        [
+                            process.pid
+                            for process in (evaluator_process, carla_process)
+                            if process is not None
+                        ],
+                    )
+                )
+            except RunnerError as exc:
+                cleanup_errors.append(f"GPU ownership query: {exc}")
         try:
             _stop_process_group(evaluator_process, grace_seconds=10)
         except RunnerError as exc:
@@ -637,18 +552,46 @@ def _execute_attempt(repo_root, plan, run_dir, attempt):
             except RunnerError as exc:
                 cleanup_errors.append(str(exc))
             try:
-                attempt_manifest["gpu_release_wait_seconds"] = wait_for_gpus_available(
-                    gpu_indices,
-                    runtime["gpu_busy_memory_threshold_mb"],
-                    timeout_seconds=runtime.get(
-                        "gpu_release_timeout_seconds", GPU_RELEASE_TIMEOUT_SECONDS
-                    ),
-                    allow_existing_compute_processes_below_threshold=(
-                        allow_existing_compute
-                    ),
-                )
+                if gpu_resource_policy == "shared_capacity":
+                    attempt_manifest["gpu_release_wait_seconds"] = (
+                        wait_for_gpu_processes_exit(
+                            [
+                                process["pid"]
+                                for process in attempt_manifest[
+                                    "gpu_owned_compute_processes"
+                                ]
+                            ],
+                            timeout_seconds=runtime.get(
+                                "gpu_release_timeout_seconds",
+                                GPU_RELEASE_TIMEOUT_SECONDS,
+                            ),
+                        )
+                    )
+                else:
+                    attempt_manifest["gpu_release_wait_seconds"] = (
+                        wait_for_gpus_available(
+                            gpu_indices,
+                            runtime["gpu_busy_memory_threshold_mb"],
+                            timeout_seconds=runtime.get(
+                                "gpu_release_timeout_seconds",
+                                GPU_RELEASE_TIMEOUT_SECONDS,
+                            ),
+                            allow_existing_compute_processes_below_threshold=(
+                                allow_existing_compute
+                            ),
+                        )
+                    )
             except RunnerError as exc:
                 cleanup_errors.append(str(exc))
+            try:
+                gpu_usage_after = _gpu_memory_usage()
+                attempt_manifest["gpu_memory_after_mb"] = {
+                    str(index): gpu_usage_after[index]
+                    for index in sorted(set(gpu_indices))
+                    if index in gpu_usage_after
+                }
+            except RunnerError as exc:
+                cleanup_errors.append(f"GPU final usage query: {exc}")
         if cleanup_errors:
             attempt_manifest["cleanup_error"] = "; ".join(cleanup_errors)
             attempt_manifest["pipeline_valid"] = False
@@ -674,9 +617,7 @@ def execute_run_plan(plan, repo_root=REPO_ROOT, resume=False):
     """Execute a prepared plan without touching unrelated CARLA processes."""
     repo_root = Path(repo_root).resolve()
     runtime = plan["runtime"]
-    threshold = _positive_int(
-        runtime["gpu_busy_memory_threshold_mb"], "gpu_busy_memory_threshold_mb"
-    )
+    gpu_resource_policy = _gpu_resource_policy(runtime)
     allow_existing_compute = bool(
         runtime.get("allow_existing_compute_processes_below_threshold", False)
     )
@@ -686,11 +627,24 @@ def execute_run_plan(plan, repo_root=REPO_ROOT, resume=False):
             runtime["carla_graphics_adapter"],
         }
     )
-    initial_gpu_usage = ensure_gpus_available(
-        selected_gpu_indices,
-        threshold,
-        allow_existing_compute_processes_below_threshold=allow_existing_compute,
-    )
+    if gpu_resource_policy == "shared_capacity":
+        minimum_free_mb = _positive_int(
+            runtime.get("gpu_minimum_free_memory_mb"),
+            "gpu_minimum_free_memory_mb",
+        )
+        initial_gpu_usage = ensure_gpus_have_free_memory(
+            selected_gpu_indices,
+            minimum_free_mb,
+        )
+    else:
+        threshold = _positive_int(
+            runtime["gpu_busy_memory_threshold_mb"], "gpu_busy_memory_threshold_mb"
+        )
+        initial_gpu_usage = ensure_gpus_available(
+            selected_gpu_indices,
+            threshold,
+            allow_existing_compute_processes_below_threshold=allow_existing_compute,
+        )
     ensure_ports_free([runtime["carla_port"], runtime["traffic_manager_port"]])
 
     run_dir = Path(plan["run_directory"])
@@ -719,6 +673,10 @@ def execute_run_plan(plan, repo_root=REPO_ROOT, resume=False):
                 "host": socket.gethostname(),
                 "allow_existing_compute_processes_below_threshold": (
                     allow_existing_compute
+                ),
+                "gpu_resource_policy": gpu_resource_policy,
+                "gpu_minimum_free_memory_mb": runtime.get(
+                    "gpu_minimum_free_memory_mb"
                 ),
                 "gpu_memory_used_mb": {
                     str(index): initial_gpu_usage[index] for index in selected_gpu_indices

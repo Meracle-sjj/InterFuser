@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-[INPUT]: 依赖 POSIX 进程组、TCP socket、nvidia-smi GPU UUID/计算进程、显存阈值与显式低占用共享策略，观察 runner 所需端口和 GPU。
-[OUTPUT]: 对外提供 RunnerError、端口/GPU 门禁与释放等待；默认拒绝已有 GPU compute owner，仅在显式准入时允许总显存未越界的低占用 context，并提供峰值监控和进程组回收。
-[POS]: tools/evaluation 的底层运行时资源守卫，将外部进程生命周期、GPU 独占/受控共享策略与硬件释放从实验编排中隔离。
+[INPUT]: 依赖 POSIX 进程组、TCP socket、nvidia-smi GPU 容量/UUID/计算进程，以及独占阈值或共享空闲容量策略，观察 runner 所需端口和 GPU。
+[OUTPUT]: 对外提供 RunnerError、端口门禁、独占/共享 GPU 启动门禁、runner 所属 GPU PID 释放等待、峰值监控和进程组回收。
+[POS]: tools.evaluation 的底层运行时资源守卫，将外部共享进程与本项目进程的所有权分离，避免用整卡绝对显存误判 CARLA/evaluator 清理失败。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
@@ -77,6 +77,33 @@ def _gpu_memory_usage():
         if len(fields) == 2:
             usage[int(fields[0])] = int(fields[1])
     return usage
+
+
+def _gpu_memory_capacity():
+    result = subprocess.run(
+        [
+            "nvidia-smi",
+            "--query-gpu=index,memory.used,memory.total",
+            "--format=csv,noheader,nounits",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RunnerError(f"unable to query GPU capacity: {result.stderr.strip()}")
+    capacity = {}
+    for line in result.stdout.splitlines():
+        fields = [item.strip() for item in line.split(",")]
+        if len(fields) == 3:
+            used = int(fields[1])
+            total = int(fields[2])
+            capacity[int(fields[0])] = {
+                "used_memory_mb": used,
+                "total_memory_mb": total,
+                "free_memory_mb": total - used,
+            }
+    return capacity
 
 
 def _gpu_compute_processes():
@@ -154,6 +181,77 @@ def ensure_gpus_available(
     if failures:
         raise RunnerError("; ".join(failures))
     return usage
+
+
+def ensure_gpus_have_free_memory(indices, minimum_free_mb):
+    """Allow shared compute owners only when every selected GPU has safe headroom."""
+    capacity = _gpu_memory_capacity()
+    failures = []
+    for index in sorted(set(indices)):
+        state = capacity.get(index)
+        if state is None:
+            failures.append(f"GPU {index} is unavailable")
+        elif state["free_memory_mb"] < minimum_free_mb:
+            failures.append(
+                f"GPU {index} has {state['free_memory_mb']} MiB free, "
+                f"below required {minimum_free_mb} MiB"
+            )
+    if failures:
+        raise RunnerError("; ".join(failures))
+    return {index: capacity[index]["used_memory_mb"] for index in sorted(set(indices))}
+
+
+def gpu_processes_in_process_groups(indices, process_group_ids):
+    """Return GPU compute processes owned by runner-created POSIX groups."""
+    selected_indices = set(indices)
+    selected_groups = {int(group_id) for group_id in process_group_ids if group_id}
+    owned = []
+    for index, processes in _gpu_compute_processes().items():
+        if index not in selected_indices:
+            continue
+        for process in processes:
+            try:
+                pid = int(process["pid"])
+                process_group_id = os.getpgid(pid)
+            except (KeyError, TypeError, ValueError, ProcessLookupError):
+                continue
+            if process_group_id in selected_groups:
+                owned.append({
+                    "gpu_index": index,
+                    "pid": pid,
+                    "process_group_id": process_group_id,
+                    "process_name": process["process_name"],
+                    "used_memory_mb": process["used_memory_mb"],
+                })
+    return sorted(owned, key=lambda item: (item["gpu_index"], item["pid"]))
+
+
+def wait_for_gpu_processes_exit(
+    process_ids,
+    timeout_seconds=GPU_RELEASE_TIMEOUT_SECONDS,
+    poll_seconds=GPU_RELEASE_POLL_SECONDS,
+):
+    """Wait only for runner-owned GPU PIDs; unrelated shared jobs are ignored."""
+    pending = {int(process_id) for process_id in process_ids}
+    started = time.monotonic()
+    deadline = started + max(0.0, float(timeout_seconds))
+    while pending:
+        active = {
+            int(process["pid"])
+            for processes in _gpu_compute_processes().values()
+            for process in processes
+            if str(process.get("pid", "")).isdigit()
+        }
+        pending.intersection_update(active)
+        if not pending:
+            break
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RunnerError(
+                f"runner-owned GPU processes did not exit: {sorted(pending)}"
+            )
+        time.sleep(min(float(poll_seconds), remaining))
+    return round(time.monotonic() - started, 3)
 
 
 def wait_for_gpus_available(

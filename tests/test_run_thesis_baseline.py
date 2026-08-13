@@ -1,6 +1,6 @@
 """
-[INPUT]: 依赖 tools.evaluation.run_thesis_baseline 的计划、路线拆分、独占/受控共享资源门禁、可配置显存释放等待、隔离式 CARLA RPC、结果解析、基础设施失败分类和执行编排 API，并使用临时配置构造最小 P0 合法输入。
-[OUTPUT]: 提供 D7 计划、原生 RPC 崩溃隔离、晚发 CARLA 退出分类、驾驶失败保留、共享与清理超时策略传递、资源释放和 pipeline-invalid 立即终止的回归测试。
+[INPUT]: 依赖 tools.evaluation.run_thesis_baseline 的计划、路线拆分、独占阈值/共享容量门禁、本项目 GPU PID 清理、隔离式 CARLA RPC、结果解析和执行编排 API，并使用临时配置构造最小 P0 合法输入。
+[OUTPUT]: 提供 D7 计划、原生 RPC 隔离、晚发退出分类、驾驶失败保留、共享容量策略传递、资源释放和 pipeline-invalid 立即终止回归测试。
 [POS]: tests 的 M0 runner 纯逻辑测试，不启动 CARLA；外部进程生命周期由真实单路线 smoke 进一步验证。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -153,6 +153,26 @@ class ThesisBaselineRunnerTests(unittest.TestCase):
             with self.assertRaisesRegex(RunnerError, "run_id"):
                 build_run_plan(config, root, run_id="../escape", check_git=False)
 
+    def test_build_plan_records_shared_capacity_policy(self):
+        with tempfile.TemporaryDirectory() as root:
+            config_path, _ = self._fixture(root)
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["runtime"].update({
+                "gpu_resource_policy": "shared_capacity",
+                "gpu_minimum_free_memory_mb": 12288,
+            })
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+
+            plan = build_run_plan(
+                config_path,
+                root,
+                run_id="shared-capacity",
+                check_git=False,
+            )
+
+        self.assertEqual(plan["runtime"]["gpu_resource_policy"], "shared_capacity")
+        self.assertEqual(plan["runtime"]["gpu_minimum_free_memory_mb"], 12288)
+
     def test_single_route_xml_preserves_original_town_and_waypoints(self):
         with tempfile.TemporaryDirectory() as root:
             _, routes = self._fixture(root)
@@ -266,7 +286,7 @@ class ThesisBaselineRunnerTests(unittest.TestCase):
             stderr="terminate called after throwing TimeoutException\n",
         )
         with patch(
-            "tools.evaluation.run_thesis_baseline.subprocess.run",
+            "tools.evaluation.carla_runtime.subprocess.run",
             return_value=aborted,
         ):
             with self.assertRaisesRegex(RunnerError, "code -6"):
@@ -276,12 +296,12 @@ class ThesisBaselineRunnerTests(unittest.TestCase):
         process = Mock()
         process.poll.return_value = None
         with patch(
-            "tools.evaluation.run_thesis_baseline._run_carla_startup_rpc",
+            "tools.evaluation.carla_runtime.run_carla_startup_rpc",
             side_effect=[RunnerError("native abort"), "Carla/Maps/Town04_Opt"],
         ) as probe, patch(
-            "tools.evaluation.run_thesis_baseline.time.monotonic",
+            "tools.evaluation.carla_runtime.time.monotonic",
             side_effect=[0.0, 0.0, 2.0],
-        ), patch("tools.evaluation.run_thesis_baseline.time.sleep") as sleep:
+        ), patch("tools.evaluation.carla_runtime.time.sleep") as sleep:
             loaded_map = _wait_for_carla(Path("/repo"), process, 2155, 10)
 
         self.assertEqual(loaded_map, "Carla/Maps/Town04_Opt")

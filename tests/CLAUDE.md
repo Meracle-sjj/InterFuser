@@ -31,7 +31,7 @@ test_run_interfuser_visual_pair.py: 验证 B0/V 训练命令共享预算、smoke
 test_interfuser_offline_metrics.py: 验证冻结 test 的 traffic AP/AUC/IoU、逐类混淆、正确 stop-sign head、waypoint 精确分母、目标条件连续帧残差与缺失支持门禁。
 test_run_interfuser_visual_test.py: 验证预注册 test 契约、索引哈希/相邻帧计数漂移、formal 未完成阻断、B0/V checkpoint/schema 准入和固定方向差值。
 test_summarize_semantic_learning_curve.py: 验证 M2 pilot 汇总拒绝缺失预算、非嵌套 train、validation 漂移、pipeline/provenance 异常与产物哈希漂移。
-test_summarize_thesis_baseline.py: 验证 M0 汇总器拒绝缺失、重复、基础设施失败和未授权输入漂移，并按冻结口径确定性归约完整路线×种子矩阵。
+test_summarize_thesis_baseline.py: 验证 M0 汇总器拒绝缺失、重复、基础设施失败和未授权输入漂移，区分评测语义与共享 GPU 资源策略后确定性归约完整路线×种子矩阵。
 test_summarize_interfuser_visual_d7.py: 验证 M2 H1 汇总器要求 B0/V 各 21/21、固定 attempt 顺序、checkpoint-only 差异，并按冻结 offline+D7 规则生成结论。
 test_analyze_interfuser_visual_d7_failures.py: 验证配对 D7 的状态转移、首碰撞事件与起步转向/车道偏移连续控制帧归因。
 test_build_pedestrian_hazard_training_manifest.py: 验证行人危险 train-only 扩充、原 validation/test 不变、Town+route holdout 隔离与特权真值准入。

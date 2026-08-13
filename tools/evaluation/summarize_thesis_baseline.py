@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-[INPUT]: 依赖一个或多个完整 run_manifest.json 及其同目录 baseline_eval_config.json，消费冻结路线、随机种子、指标、模型输入哈希与路线进度 blocked 判据哈希。
-[OUTPUT]: 对外提供 SummaryError、build_summary、write_summary 与 CLI，生成确定性三种子路线宏平均、种子波动、失败类型和资源证据 JSON。
-[POS]: tools/evaluation 的 M0 纯离线汇总器，位于 runner 之后、论文实验记录之前；默认拒绝缺失、重复、pipeline-invalid 与未授权输入漂移。
+[INPUT]: 依赖一个或多个完整 run_manifest.json 及其同目录 baseline_eval_config.json，消费冻结评测语义、模型输入哈希、路线进度判据与独立资源调度 provenance。
+[OUTPUT]: 对外提供 SummaryError、build_summary、write_summary 与 CLI，在允许资源策略变化但拒绝评测语义漂移的前提下生成确定性三种子路线宏平均和资源证据。
+[POS]: tools.evaluation 的 M0 纯离线汇总器，位于 runner 之后、论文记录之前；把“结果是否可比”与“在哪种 GPU 调度下产生”分层建模。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
@@ -33,6 +33,9 @@ CONTRACT_INPUTS = (
     "leaderboard_route_scenario",
     "leaderboard_progress_criteria",
     "scenario_runner_route_scenario",
+    "evaluation_runner",
+    "runtime_resources",
+    "carla_runtime",
 )
 
 
@@ -76,7 +79,34 @@ def _contract(manifest, config):
         "route_ids": sorted(route_ids),
         "random_seeds": sorted(config.get("random_seeds", [])),
         "checkpoint": config.get("checkpoint"),
-        "runtime": plan.get("runtime"),
+        "runtime": {
+            key: value
+            for key, value in (plan.get("runtime") or {}).items()
+            if key
+            not in {
+                "agent_cuda_visible_device",
+                "allow_existing_compute_processes_below_threshold",
+                "carla_graphics_adapter",
+                "gpu_busy_memory_threshold_mb",
+                "gpu_minimum_free_memory_mb",
+                "gpu_release_timeout_seconds",
+                "gpu_resource_policy",
+            }
+        },
+        "resource_runtime": {
+            key: value
+            for key, value in (plan.get("runtime") or {}).items()
+            if key
+            in {
+                "agent_cuda_visible_device",
+                "allow_existing_compute_processes_below_threshold",
+                "carla_graphics_adapter",
+                "gpu_busy_memory_threshold_mb",
+                "gpu_minimum_free_memory_mb",
+                "gpu_release_timeout_seconds",
+                "gpu_resource_policy",
+            }
+        },
         "environment": plan.get("environment"),
         "input_sha256": _input_hashes(config),
     }

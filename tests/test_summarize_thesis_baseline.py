@@ -23,7 +23,15 @@ def _sha256(path):
 
 
 class ThesisBaselineSummaryTests(unittest.TestCase):
-    def _write_run(self, root, run_id, seeds, evaluator_hash="eval-a", invalid=False):
+    def _write_run(
+        self,
+        root,
+        run_id,
+        seeds,
+        evaluator_hash="eval-a",
+        invalid=False,
+        gpu_resource_policy="exclusive_threshold",
+    ):
         run_dir = Path(root) / run_id
         run_dir.mkdir()
         inputs = {
@@ -39,6 +47,9 @@ class ThesisBaselineSummaryTests(unittest.TestCase):
                 "leaderboard_route_scenario",
                 "leaderboard_progress_criteria",
                 "scenario_runner_route_scenario",
+                "evaluation_runner",
+                "runtime_resources",
+                "carla_runtime",
             )
         }
         inputs["leaderboard_evaluator"]["sha256"] = evaluator_hash
@@ -88,7 +99,14 @@ class ThesisBaselineSummaryTests(unittest.TestCase):
                 "code_anchor": f"anchor-{run_id}",
                 "runner_sha256": f"runner-{run_id}",
                 "config_sha256": _sha256(config_path),
-                "runtime": {"carla_port": 2155},
+                "runtime": {
+                    "carla_port": 2155,
+                    "gpu_resource_policy": gpu_resource_policy,
+                    "gpu_busy_memory_threshold_mb": 1024,
+                    "gpu_minimum_free_memory_mb": (
+                        12288 if gpu_resource_policy == "shared_capacity" else None
+                    ),
+                },
                 "environment": {"PYTHONOPTIMIZE": "1"},
             },
             "attempts": attempts,
@@ -153,6 +171,23 @@ class ThesisBaselineSummaryTests(unittest.TestCase):
         self.assertEqual(
             summary["input_hash_variants"]["leaderboard_evaluator"],
             ["eval-a", "eval-b"],
+        )
+
+    def test_allows_resource_policy_drift_with_identical_evaluation_semantics(self):
+        with tempfile.TemporaryDirectory() as root:
+            seed0 = self._write_run(
+                root, "seed0", [0], gpu_resource_policy="exclusive_threshold"
+            )
+            seeds12 = self._write_run(
+                root, "seeds12", [1, 2], gpu_resource_policy="shared_capacity"
+            )
+
+            summary = build_summary([seed0, seeds12])
+
+        self.assertTrue(summary["valid"])
+        self.assertEqual(summary["attempt_count"], 6)
+        self.assertEqual(
+            summary["contract"]["runtime"], {"carla_port": 2155}
         )
 
     def test_output_is_deterministic_and_refuses_overwrite(self):

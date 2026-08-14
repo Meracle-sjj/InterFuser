@@ -15,5 +15,6 @@ run_interfuser_visual_d7_pair.py: 在冻结 test 有效后构建固定路线/see
 build_interfuser_visual_d7_configs.py: 消费预注册 build 契约，只在 formal/test 均有效后从实际 best checkpoint 一次性生成 hash-bound B0/V child 与 pair 配置。
 interfuser_offline_metrics.py: 纯归约 InterFuser traffic grid、逐时域 waypoint、junction、red-light 与 stop-sign 输出，并以目标条件相邻帧残差度量预测稳定性。
 run_interfuser_visual_test.py: 在 formal B0/V 完整有效后，以严格索引的隔离单 GPU worker 串行 strict-load 两个 best checkpoint，守卫 test 帧/相邻帧计数、哈希和资源并生成配对指标差值 manifest。
+run_interfuser_modality_ablation.py: 在完整 validation 上固定官方 B0/B0-V 与非目标输入，成对执行 RGB 均值填充、模糊、样本错配和 LiDAR 清空，归约任务退化、输出敏感度及预注册模态依赖判定。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

@@ -2,7 +2,7 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 状态 | **FROZEN-FEASIBILITY：只验证官方可驾驶底座上的视觉替换与零微调闭环准入** |
+| 状态 | **ROUTE39-3SEED-PASSED：零微调未灾难退化，不启动短适配，待进入 D7** |
 | 服务假设 | H1：交通域 ResNet-50 预训练能否在保留官方 InterFuser 驾驶能力的前提下改善视觉表征 |
 | 配置 | `configs/thesis/interfuser_official_visual_swap_initialization_v1.json` |
 | 生成器 | `tools/training/interfuser_visual_swap_pair.py` |
@@ -38,5 +38,18 @@
 ## 5. 结论边界
 
 本阶段只回答“交通域视觉骨干能否接入作者发布的可驾驶 InterFuser 而不破坏基础闭环”。单路线不得宣称 Driving Score 改善，语义离线改善也不得代替多路线闭环证据。
+
+## 6. route39 三 seed 零微调结果
+
+2026-08-14 在 CARLA 0.9.16、官方 agent/controller、GNSS 第 0 轴取反、正确 Lincoln 蓝图、200 辆背景车与 600 帧上限下完成 `official_b0`/`official_b0_v` 配对。
+
+| seed | official_b0 RC | official_b0_v RC | RC 差值 | official_b0 位移 | official_b0_v 位移 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 61.8863% | 59.5555% | -2.3308 | 132.43 m | 127.41 m |
+| 1 | 61.8863% | 61.8863% | 0.0000 | 132.50 m | 131.82 m |
+| 2 | 61.8863% | 60.9539% | -0.9323 | 132.53 m | 130.64 m |
+| 均值 | 61.8863% | 60.7986% | -1.0877 | 132.48 m | 129.96 m |
+
+六次运行均完成 600 帧、evaluator exit 0，无 `DIAG_EVENT`。`official_b0_v` 的平均 RC 相对下降 1.76%，但三个 seed 均无早期失控、碰撞或出界；连续帧显示车辆持续沿车道推进。按第 3–4 节门槛，零微调可行性通过，不事后启动短适配；该小幅负差必须由 D7 多路线决定是否稳定。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

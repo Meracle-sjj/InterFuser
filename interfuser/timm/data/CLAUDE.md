@@ -6,7 +6,7 @@
 CLAUDE.md: timm.data 局部地图，约束 CARLA 扩展与通用图像数据工具的依赖方向。
 __init__.py: 统一导出数据集、loader、增强与常量 API。
 base_io_dataset.py: 使用受控文件生命周期提供文本、JSON、NumPy 和图像基础读取与历史帧回退。
-carla_dataset.py: 从显式 dataset index 解析 CARLA 多视角 RGB/LiDAR/测量标签为 InterFuser 多任务样本。
+carla_dataset.py: 从显式 dataset index 解析 CARLA 多视角 RGB/LiDAR/测量标签为 InterFuser 多任务样本，并以默认 `-1`、显式可覆写的 y 轴乘数隔离不同 CARLA 采集坐标约定。
 carla_loader.py: 为 CarlaMVDetDataset 绑定多视角变换与分布式 DataLoader。
 dataset_factory.py: 按名称创建通用或 CARLA dataset。
 dataset.py: 通用 ImageFolder/Tar 数据集封装。

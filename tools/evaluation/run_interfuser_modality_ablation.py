@@ -180,11 +180,50 @@ def load_contract(config_path, repo_root=REPO_ROOT):
     split_validation = (split.get("artifacts", {}).get("validation", {}) or {})
     if validation_hash != split_validation.get("sha256"):
         raise ModalityAblationError("validation index differs from split manifest")
+    dataset_implementation = dataset.get("implementation")
+    if dataset_implementation is not None:
+        if not isinstance(dataset_implementation, dict):
+            raise ModalityAblationError("dataset.implementation must be an object")
+        implementation_path = _resolve_path(
+            repo_root,
+            dataset_implementation.get("path"),
+            "dataset.implementation",
+        )
+        _verify_hash(
+            implementation_path,
+            dataset_implementation.get("sha256"),
+            "dataset.implementation",
+        )
     expected_frames = (split.get("summary", {}).get("validation", {}) or {}).get(
         "logical_frames"
     )
     if dataset.get("logical_frames") != expected_frames:
         raise ModalityAblationError("validation frame count differs from split manifest")
+    lidar_y_axis_multiplier = dataset.get("lidar_y_axis_multiplier", -1.0)
+    if isinstance(lidar_y_axis_multiplier, bool) or not isinstance(
+        lidar_y_axis_multiplier, (int, float)
+    ):
+        raise ModalityAblationError("dataset.lidar_y_axis_multiplier must be -1.0 or 1.0")
+    if float(lidar_y_axis_multiplier) not in (-1.0, 1.0):
+        raise ModalityAblationError("dataset.lidar_y_axis_multiplier must be -1.0 or 1.0")
+    density_gate = dataset.get("lidar_density_gate")
+    if density_gate is not None:
+        if not isinstance(density_gate, dict):
+            raise ModalityAblationError("dataset.lidar_density_gate must be an object")
+        _positive_int(
+            density_gate.get("minimum_mean_nonzero_cells"),
+            "dataset.lidar_density_gate.minimum_mean_nonzero_cells",
+        )
+        maximum_zero = density_gate.get("maximum_all_zero_fraction")
+        if (
+            not isinstance(maximum_zero, (int, float))
+            or isinstance(maximum_zero, bool)
+            or not math.isfinite(float(maximum_zero))
+            or not 0.0 <= float(maximum_zero) <= 1.0
+        ):
+            raise ModalityAblationError(
+                "dataset.lidar_density_gate.maximum_all_zero_fraction must be in [0, 1]"
+            )
 
     model = raw.get("model") or {}
     if model.get("name") != "interfuser_baseline" or model.get("with_lidar") is not True:
@@ -466,6 +505,9 @@ def _evaluate_variant(contract, variant, max_batches=None):
         multi_view=True,
         augment_prob=0.0,
         dataset_index=str(contract["validation_index_path"]),
+        lidar_y_axis_multiplier=contract["dataset"].get(
+            "lidar_y_axis_multiplier", -1.0
+        ),
     )
     dataset = _StrictIndexedDataset(base_dataset)
     loader = create_carla_loader(
@@ -500,10 +542,20 @@ def _evaluate_variant(contract, variant, max_batches=None):
         for condition in CONDITIONS
         if condition != "normal"
     }
+    lidar_samples = 0
+    lidar_all_zero = 0
+    lidar_nonzero_cells = 0
+    lidar_tensor_cells = 0
     started = time.monotonic()
     with torch.inference_mode():
         for batch_index, (inputs, targets) in enumerate(loader):
             inputs = {name: value.cuda(non_blocking=False) for name, value in inputs.items()}
+            lidar = inputs["lidar"]
+            per_sample_nonzero = (lidar != 0).reshape(lidar.shape[0], -1).sum(dim=1)
+            lidar_samples += int(lidar.shape[0])
+            lidar_all_zero += int((per_sample_nonzero == 0).sum())
+            lidar_nonzero_cells += int(per_sample_nonzero.sum())
+            lidar_tensor_cells += int(lidar.numel())
             normal_outputs = model(inputs)
             task_accumulators["normal"].update(normal_outputs, targets)
             for condition in CONDITIONS[1:]:
@@ -527,6 +579,35 @@ def _evaluate_variant(contract, variant, max_batches=None):
             if max_batches is not None and batch_index + 1 >= max_batches:
                 break
 
+    lidar_density = {
+        "samples": lidar_samples,
+        "all_zero_samples": lidar_all_zero,
+        "all_zero_fraction": lidar_all_zero / max(lidar_samples, 1),
+        "mean_nonzero_cells_per_sample": lidar_nonzero_cells
+        / max(lidar_samples, 1),
+        "nonzero_fraction": lidar_nonzero_cells / max(lidar_tensor_cells, 1),
+        "tensor_cells_per_sample": lidar_tensor_cells // max(lidar_samples, 1),
+        "y_axis_multiplier": float(
+            contract["dataset"].get("lidar_y_axis_multiplier", -1.0)
+        ),
+    }
+    density_gate = contract["dataset"].get("lidar_density_gate")
+    if density_gate is not None:
+        if lidar_density["mean_nonzero_cells_per_sample"] < density_gate[
+            "minimum_mean_nonzero_cells"
+        ]:
+            raise ModalityAblationError(
+                "LiDAR density gate failed: mean nonzero cells "
+                f"{lidar_density['mean_nonzero_cells_per_sample']:.3f}"
+            )
+        if lidar_density["all_zero_fraction"] > density_gate[
+            "maximum_all_zero_fraction"
+        ]:
+            raise ModalityAblationError(
+                "LiDAR density gate failed: all-zero fraction "
+                f"{lidar_density['all_zero_fraction']:.6f}"
+            )
+
     condition_results = {}
     for condition in CONDITIONS:
         condition_results[condition] = {
@@ -541,6 +622,7 @@ def _evaluate_variant(contract, variant, max_batches=None):
         "checkpoint_sha256": variant["checkpoint_sha256"],
         "samples": condition_results["normal"]["task_metrics"]["samples"],
         "duration_seconds": round(time.monotonic() - started, 3),
+        "lidar_input_density": lidar_density,
         "conditions": condition_results,
         "dependency": _variant_verdict(
             condition_results, contract["decision_thresholds"]

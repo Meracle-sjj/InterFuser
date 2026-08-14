@@ -1,13 +1,17 @@
 """
-[INPUT]: 依赖模态审计器的注册干预、配对输出累加器和预注册依赖判定。
-[OUTPUT]: 验证 RGB/LiDAR 单变量注入、输出效应量分母及 weak/material 阈值方向。
+[INPUT]: 依赖 CarlaMVDetDataset 的显式 LiDAR y 轴契约，以及模态审计器的注册干预、配对输出累加器和预注册依赖判定。
+[OUTPUT]: 验证 LiDAR 坐标乘数拒绝非法值、RGB/LiDAR 单变量注入、输出效应量分母及 weak/material 阈值方向。
 [POS]: tests 的模态因果审计回归，阻止消融同时污染非目标输入或在结果后漂移判定口径。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import torch
+
+from timm.data.carla_dataset import CarlaMVDetDataset
 
 from tools.evaluation.run_interfuser_modality_ablation import (
     OutputSensitivityAccumulator,
@@ -46,6 +50,29 @@ class PerturbInputsTest(unittest.TestCase):
         self.assertEqual(torch.count_nonzero(result["lidar"]), 0)
         for key in ("rgb", "rgb_center", "rgb_left", "rgb_right"):
             self.assertIs(result[key], self.inputs[key])
+
+
+class LidarAxisContractTest(unittest.TestCase):
+    def test_explicit_axis_multiplier_and_invalid_value(self):
+        with TemporaryDirectory() as temporary:
+            index = Path(temporary) / "dataset_index.txt"
+            index.write_text("", encoding="utf-8")
+            dataset = CarlaMVDetDataset(
+                temporary,
+                towns=[1],
+                weathers=[0],
+                dataset_index=str(index),
+                lidar_y_axis_multiplier=1.0,
+            )
+            self.assertEqual(dataset.lidar_y_axis_multiplier, 1.0)
+            with self.assertRaisesRegex(ValueError, "lidar_y_axis_multiplier"):
+                CarlaMVDetDataset(
+                    temporary,
+                    towns=[1],
+                    weathers=[0],
+                    dataset_index=str(index),
+                    lidar_y_axis_multiplier=0.0,
+                )
 
 
 class OutputSensitivityAccumulatorTest(unittest.TestCase):

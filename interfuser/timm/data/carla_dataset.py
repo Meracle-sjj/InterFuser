@@ -1,6 +1,6 @@
 """
-[INPUT]: 依赖 CARLA route sequence 目录、测量/参与者标签、RGB/LiDAR 文件与可选显式 dataset index。
-[OUTPUT]: 对外提供 CarlaMVDetDataset、LiDAR 直方图编码与坐标变换，生成 InterFuser 多任务训练样本。
+[INPUT]: 依赖 CARLA route sequence 目录、测量/参与者标签、RGB/LiDAR 文件、显式 dataset index 与采集版本的 LiDAR y 轴约定。
+[OUTPUT]: 对外提供 CarlaMVDetDataset、可配置符号的 LiDAR 直方图编码与坐标变换，生成 InterFuser 多任务训练样本。
 [POS]: timm.data 的 CARLA 下游数据适配层；只解析契约选中的 sequence，不自行决定 train/validation 归属。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -101,6 +101,7 @@ class CarlaMVDetDataset(BaseIODataset):
         multi_view=False,
         augment_prob=0.0,
         dataset_index=None,
+        lidar_y_axis_multiplier=-1.0,
     ):
         super().__init__()
 
@@ -119,6 +120,13 @@ class CarlaMVDetDataset(BaseIODataset):
         self.with_depth = with_depth
         self.with_lidar = with_lidar
         self.multi_view = multi_view
+        if isinstance(lidar_y_axis_multiplier, bool) or not isinstance(
+            lidar_y_axis_multiplier, (int, float)
+        ):
+            raise ValueError("lidar_y_axis_multiplier must be -1.0 or 1.0")
+        self.lidar_y_axis_multiplier = float(lidar_y_axis_multiplier)
+        if self.lidar_y_axis_multiplier not in (-1.0, 1.0):
+            raise ValueError("lidar_y_axis_multiplier must be -1.0 or 1.0")
 
         self.augment_prob = augment_prob
         if self.augment_prob > 0:
@@ -354,7 +362,7 @@ class CarlaMVDetDataset(BaseIODataset):
             lidar_unprocessed = self._load_npy(
                 os.path.join(route_dir, "lidar", "%04d.npy" % frame_id)
             )[..., :3]
-            lidar_unprocessed[:, 1] *= -1
+            lidar_unprocessed[:, 1] *= self.lidar_y_axis_multiplier
             full_lidar = transform_2d_points(
                 lidar_unprocessed,
                 np.pi / 2 - measurements["theta"],

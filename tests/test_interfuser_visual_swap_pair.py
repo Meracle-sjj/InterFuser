@@ -1,7 +1,7 @@
 """
-[INPUT]: 依赖 interfuser_visual_swap_pair 的固定 M0 底座加载、RGB strict replacement 与状态哈希 API。
-[OUTPUT]: 验证 M0-FT 原样继承底座、M0-V 仅改变 RGB alias、非 RGB 指纹一致，并拒绝错误底座元数据。
-[POS]: tests 的固定底座视觉替换回归，防止重新随机初始化被误写为预训练视觉接入实验。
+[INPUT]: 依赖 interfuser_visual_swap_pair 的固定 InterFuser 底座加载、checkpoint 架构别名、RGB strict replacement 与状态哈希 API。
+[OUTPUT]: 验证对照分支原样继承底座、视觉分支仅改变 RGB alias、非 RGB 指纹一致，并拒绝错误底座元数据。
+[POS]: tests 的固定底座视觉替换回归，防止重新随机初始化或模糊 checkpoint 来源被误写为预训练视觉接入实验。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
@@ -155,6 +155,24 @@ class InterfuserVisualSwapPairTests(unittest.TestCase):
             }
             with self.assertRaisesRegex(visual_swap.VisualSwapError, "epoch"):
                 visual_swap._load_base_state(path, contract)
+
+    def test_accepts_explicit_checkpoint_architecture_alias(self):
+        with tempfile.TemporaryDirectory() as root_value:
+            path = Path(root_value) / "official.pth.tar"
+            state = {"weight": torch.zeros(1)}
+            torch.save(
+                {"epoch": 34, "arch": "mvt_baseline", "state_dict": state},
+                path,
+            )
+            contract = {
+                "base_checkpoint": {
+                    "architecture": "interfuser_baseline",
+                    "checkpoint_architecture": "mvt_baseline",
+                    "epoch": 34,
+                }
+            }
+            loaded = visual_swap._load_base_state(path, contract)
+            self.assertEqual(set(loaded), {"weight"})
 
     def test_rejects_non_backbone_visual_export(self):
         with tempfile.TemporaryDirectory() as root_value:

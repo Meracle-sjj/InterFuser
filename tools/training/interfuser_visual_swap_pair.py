@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-[INPUT]: 依赖冻结 M0 InterFuser checkpoint、同构交通域 ResNet50d 骨干导出与 swap 初始化配置。
-[OUTPUT]: 对外提供 load_visual_swap_contract、prepare_visual_swap_pair 与 CLI，生成 M0-FT/M0-V strict-loadable 初始 checkpoint 及逐张量不变量证据。
-[POS]: tools/training 的固定底座视觉替换边界；保留 M0 非视觉能力，只以 RGB backbone 区分对照与实验分支。
+[INPUT]: 依赖冻结 InterFuser checkpoint、同构交通域 ResNet50d 骨干导出与 swap 初始化配置。
+[OUTPUT]: 对外提供 load_visual_swap_contract、prepare_visual_swap_pair 与 CLI，兼容 checkpoint 原始架构别名并生成可命名的 strict-loadable 对照/视觉替换 checkpoint 及逐张量不变量证据。
+[POS]: tools/training 的固定底座视觉替换边界；保留底座非视觉能力，只以 RGB backbone 区分对照与实验分支。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
@@ -128,6 +128,13 @@ def load_visual_swap_contract(path):
         raise VisualSwapError("base_checkpoint must be an object")
     if base.get("architecture") != model["name"] or not isinstance(base.get("epoch"), int):
         raise VisualSwapError("base checkpoint architecture/epoch contract is invalid")
+    checkpoint_architecture = base.get(
+        "checkpoint_architecture", base["architecture"]
+    )
+    if not isinstance(checkpoint_architecture, str) or not checkpoint_architecture:
+        raise VisualSwapError(
+            "base checkpoint checkpoint_architecture must be a non-empty string"
+        )
     resolved["base_checkpoint"] = _resolve_repo_path(
         base.get("path"), "base_checkpoint.path"
     )
@@ -165,6 +172,22 @@ def load_visual_swap_contract(path):
     if not isinstance(raw.get("require_clean_git"), bool):
         raise VisualSwapError("require_clean_git must be boolean")
 
+    variant_names = raw.get(
+        "variant_names", {"base": "m0_ft", "visual": "m0_v"}
+    )
+    if not isinstance(variant_names, dict) or set(variant_names) != {
+        "base",
+        "visual",
+    }:
+        raise VisualSwapError("variant_names must contain exactly base and visual")
+    if any(
+        not isinstance(value, str) or not RUN_ID_PATTERN.fullmatch(value)
+        for value in variant_names.values()
+    ):
+        raise VisualSwapError("variant names must use safe run-id characters")
+    if variant_names["base"] == variant_names["visual"]:
+        raise VisualSwapError("base and visual variant names must differ")
+
     result_root = _resolve_repo_path(raw.get("result_root"), "result_root").resolve()
     try:
         result_root.relative_to(REPO_ROOT.resolve())
@@ -178,6 +201,8 @@ def load_visual_swap_contract(path):
             "sha256": sha256_file(path),
             "resolved": resolved,
             "result_root_path": result_root,
+            "checkpoint_architecture": checkpoint_architecture,
+            "variant_names": variant_names,
         }
     )
     return normalized
@@ -194,7 +219,11 @@ def _load_base_state(path, contract):
     if not isinstance(payload, dict) or not isinstance(payload.get("state_dict"), dict):
         raise VisualSwapError("base checkpoint must contain a state_dict")
     base_contract = contract["base_checkpoint"]
-    if payload.get("arch") != base_contract["architecture"]:
+    checkpoint_architecture = contract.get(
+        "checkpoint_architecture",
+        base_contract.get("checkpoint_architecture", base_contract["architecture"]),
+    )
+    if payload.get("arch") != checkpoint_architecture:
         raise VisualSwapError("base checkpoint architecture differs from the contract")
     if payload.get("epoch") != base_contract["epoch"]:
         raise VisualSwapError("base checkpoint epoch differs from the contract")
@@ -239,7 +268,7 @@ def _save_checkpoint(path, arch, variant, state_dict, provenance):
 
 
 def prepare_visual_swap_pair(config_path, run_id, result_root=None):
-    """Create M0-FT/M0-V checkpoints whose only tensor difference is RGB state."""
+    """Create fixed-base checkpoints whose only tensor difference is RGB state."""
     if not isinstance(run_id, str) or not RUN_ID_PATTERN.fullmatch(run_id):
         raise VisualSwapError("run_id must use letters, digits, dot, dash or underscore")
     contract = load_visual_swap_contract(config_path)
@@ -333,19 +362,24 @@ def prepare_visual_swap_pair(config_path, run_id, result_root=None):
             "base_checkpoint_sha256": base["sha256"],
             "base_epoch": base["epoch"],
         }
-        m0_ft_path = run_dir / "m0_ft_initial_checkpoint.pth"
-        m0_v_path = run_dir / "m0_v_initial_checkpoint.pth"
+        variant_names = contract.get(
+            "variant_names", {"base": "m0_ft", "visual": "m0_v"}
+        )
+        base_variant = variant_names["base"]
+        visual_variant = variant_names["visual"]
+        m0_ft_path = run_dir / f"{base_variant}_initial_checkpoint.pth"
+        m0_v_path = run_dir / f"{visual_variant}_initial_checkpoint.pth"
         _save_checkpoint(
             m0_ft_path,
             contract["model"]["name"],
-            "m0_ft",
+            base_variant,
             m0_ft_state,
             {**common_provenance, "rgb_action": "preserve_base"},
         )
         _save_checkpoint(
             m0_v_path,
             contract["model"]["name"],
-            "m0_v",
+            visual_variant,
             m0_v_state,
             {
                 **common_provenance,
@@ -378,13 +412,13 @@ def prepare_visual_swap_pair(config_path, run_id, result_root=None):
                     "strict_full_checkpoint_load": True,
                 },
                 "variants": {
-                    "m0_ft": {
+                    base_variant: {
                         "checkpoint": str(m0_ft_path),
                         "checkpoint_sha256": sha256_file(m0_ft_path),
                         "full_state_sha256": state_dict_sha256(m0_ft_state),
                         "rgb_state_sha256": state_dict_sha256(m0_rgb),
                     },
-                    "m0_v": {
+                    visual_variant: {
                         "checkpoint": str(m0_v_path),
                         "checkpoint_sha256": sha256_file(m0_v_path),
                         "full_state_sha256": state_dict_sha256(m0_v_state),

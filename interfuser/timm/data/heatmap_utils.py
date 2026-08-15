@@ -1,3 +1,10 @@
+"""
+[INPUT]: 依赖 CARLA 测量与参与者世界坐标、OpenCV 栅格绘制，以及调用方冻结的世界到模型旋转矩阵。
+[OUTPUT]: 对外提供交通参与者 heatmap、未来轨迹 heatmap 与朝向换算；轨迹可复用数据集的导航坐标契约。
+[POS]: timm.data 的几何目标生成层；与 CarlaMVDetDataset 共享同一旋转矩阵，避免 target point、waypoint 与热力图坐标分叉。
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+"""
+
 import math
 import json
 import os
@@ -46,20 +53,25 @@ def get_yaw_angle(forward_vector):
     return yaw
 
 
-def generate_future_waypoints(measurements, pixels_per_meter=5, max_distance=18):
+def generate_future_waypoints(
+    measurements, pixels_per_meter=5, max_distance=18, rotation_matrix=None
+):
     img_size = max_distance * pixels_per_meter * 2
     img = np.zeros((img_size, img_size), np.uint8)
     ego_x = measurements["gps_x"]
     ego_y = measurements["gps_y"]
-    ego_theta = measurements["theta"] + np.pi / 2
-    R = np.array(
-        [
-            [np.cos(ego_theta), -np.sin(ego_theta)],
-            [np.sin(ego_theta), np.cos(ego_theta)],
-        ]
-    )
+    if rotation_matrix is None:
+        ego_theta = measurements["theta"] + np.pi / 2
+        rotation_matrix = np.array(
+            [
+                [np.cos(ego_theta), -np.sin(ego_theta)],
+                [np.sin(ego_theta), np.cos(ego_theta)],
+            ]
+        )
     for waypoint in measurements["future_waypoints"]:
-        new_loc = R.T.dot(np.array([waypoint[0] - ego_x, waypoint[1] - ego_y]))
+        new_loc = rotation_matrix.T.dot(
+            np.array([waypoint[0] - ego_x, waypoint[1] - ego_y])
+        )
         if new_loc[0] ** 2 + new_loc[1] ** 2 > (max_distance + 3) ** 2 * 2:
             break
         new_loc = new_loc * pixels_per_meter + pixels_per_meter * max_distance

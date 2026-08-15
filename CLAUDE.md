@@ -47,6 +47,7 @@ configs/thesis/interfuser_visual_pair_pedestrian_hazard_smoke_v1.json - M2 H1 �
 configs/thesis/interfuser_visual_pair_formal_v1.json - M2 H1 B0/V 正式下游训练预算、无泄漏三分索引和资源契约
 configs/thesis/interfuser_visual_pair_test_v1.json - M2 H1 冻结 test 的预注册指标、formal 产物准入与单 GPU 资源契约
 configs/thesis/interfuser_visual_d7_build_v1.json - M2 H1 D7 配置冻结契约，在 formal/test 有效后生成哈希绑定的 B0/V 闭环配置
+configs/thesis/interfuser_official_stage2_pilot_v1.json - M2 H1 官方底座 Stage 2 三轮配对协同适配契约，冻结 CARLA 0.9.16 坐标、有效帧和 GPU1 单卡全局 batch
 README.md - InterFuser 上游安装、数据生成、训练与评测说明
 requirements.txt - 上游 Python 依赖基线；实际实验以固定 conda 环境为准
 setup_carla.sh - 上游 CARLA 安装脚本；当前服务器实际运行 CARLA 0.9.16

@@ -4,7 +4,7 @@
 ## 成员清单
 
 CLAUDE.md: InterFuser 下游训练与内置 timm 运行时的局部地图。
-train.py: 下游多任务训练入口，协调模型、CARLA 数据、优化、验证和 checkpoint 生命周期。
+train.py: 下游多任务训练入口，协调模型、CARLA 数据、显式 LiDAR/导航坐标、有效样本数门禁、优化、验证和 checkpoint 生命周期。
 render.py: 将交通预测与 waypoint 目标渲染为训练诊断图像。
 distributed_train.sh: 用 PyTorch distributed launcher 启动多 GPU `train.py`。
 monitor_training.sh: 轮询历史训练输出的运行状态辅助脚本。

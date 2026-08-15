@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-[INPUT]: 依赖版本化 B0/V 训练配置、无泄漏下游 train/validation/test 索引、strict 初始 checkpoint 对、InterFuser train.py 与 GPU/端口资源守卫。
-[OUTPUT]: 对外提供 PairRunError、load_pair_run_contract、build_training_command、execute_pair_run 与 CLI，串行生成 B0/V 训练产物、指标和配对 manifest。
-[POS]: tools/training 的 M2 H1 下游训练编排器；复用上游 train.py 而不重写训练循环，任一 variant 基础设施失败即停止配对准入。
+[INPUT]: 依赖版本化 B0/V 训练配置、无泄漏下游索引、strict 初始 checkpoint 对、显式传感器坐标契约、InterFuser train.py 与独占/共享 GPU 资源守卫。
+[OUTPUT]: 对外提供 PairRunError、load_pair_run_contract、build_training_command、execute_pair_run 与 CLI，串行生成 smoke/pilot/formal 的 B0/V 训练产物和配对 manifest。
+[POS]: tools.training 的 M2 H1 Stage 2 编排器；复用 train.py 并冻结唯一初始化变量，任一数据、资源或产物漂移即停止配对准入。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
@@ -35,32 +35,27 @@ from tools.evaluation.runtime_resources import (  # noqa: E402
     _GpuMemoryMonitor,
     _stop_process_group,
     ensure_gpus_available,
+    ensure_gpus_have_free_memory,
     ensure_ports_free,
+    gpu_processes_in_process_groups,
+    wait_for_gpu_processes_exit,
     wait_for_gpus_available,
     wait_for_ports_free,
 )
+from tools.training.interfuser_pair_contract import (  # noqa: E402
+    PairRunError,
+    VARIANTS,
+    load_pair_run_contract,
+    sha256_file,
+)
 
 
-SCHEMA_VERSION = 1
 MANIFEST_VERSION = 1
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$")
-VARIANTS = ("b0", "v")
-
-
-class PairRunError(RuntimeError):
-    """Raised when paired downstream training loses comparability or provenance."""
 
 
 def _utc_now():
     return datetime.now(timezone.utc).isoformat()
-
-
-def sha256_file(path):
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _write_json(path, value):
@@ -69,186 +64,6 @@ def _write_json(path, value):
         json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     temporary.replace(path)
-
-
-def _read_json(path, label):
-    try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise PairRunError(f"unable to read {label} JSON {path}: {exc}") from exc
-
-
-def _resolve_path(value, label):
-    if not isinstance(value, str) or not value:
-        raise PairRunError(f"{label} must be a non-empty path")
-    path = Path(value)
-    return path if path.is_absolute() else REPO_ROOT / path
-
-
-def _verify_hash(path, expected, label):
-    if not isinstance(expected, str) or len(expected) != 64:
-        raise PairRunError(f"{label} SHA-256 must contain 64 hex characters")
-    actual = sha256_file(path)
-    if actual != expected:
-        raise PairRunError(
-            f"{label} SHA-256 mismatch: expected {expected}, got {actual}"
-        )
-    return actual
-
-
-def _positive_int(value, label, allow_zero=False):
-    valid = isinstance(value, int) and not isinstance(value, bool)
-    valid = valid and (value >= 0 if allow_zero else value > 0)
-    if not valid:
-        qualifier = "nonnegative" if allow_zero else "positive"
-        raise PairRunError(f"{label} must be a {qualifier} integer")
-    return value
-
-
-def _positive_number(value, label, allow_zero=False):
-    if not isinstance(value, (int, float)) or isinstance(value, bool):
-        raise PairRunError(f"{label} must be numeric")
-    value = float(value)
-    if not math.isfinite(value) or (value < 0 if allow_zero else value <= 0):
-        raise PairRunError(f"{label} must be finite and nonnegative/positive")
-    return value
-
-
-def load_pair_run_contract(path):
-    """Validate one paired training contract and every referenced artifact."""
-    path = Path(path).resolve()
-    raw = _read_json(path, "pair run config")
-    if raw.get("schema_version") != SCHEMA_VERSION or raw.get("status") not in {
-        "smoke",
-        "formal",
-    }:
-        raise PairRunError("pair run config must be smoke/formal schema v1")
-    resolved = {}
-    for field in ("downstream_split_manifest", "initialization_manifest"):
-        resolved[field] = _resolve_path(raw.get(field), field).resolve()
-        _verify_hash(resolved[field], raw.get(f"{field}_sha256"), field)
-    split_manifest = _read_json(resolved["downstream_split_manifest"], "downstream split")
-    init_manifest = _read_json(resolved["initialization_manifest"], "initialization")
-    if not split_manifest.get("valid"):
-        raise PairRunError("downstream split manifest must be valid")
-    if not init_manifest.get("pipeline_valid"):
-        raise PairRunError("initialization manifest must be pipeline valid")
-
-    dataset = raw.get("dataset")
-    if not isinstance(dataset, dict):
-        raise PairRunError("dataset must be an object")
-    resolved["dataset_root"] = _resolve_path(dataset.get("root"), "dataset.root").resolve()
-    if not resolved["dataset_root"].is_dir():
-        raise PairRunError("dataset.root is not a directory")
-    contract_splits = (
-        ("train", "validation", "test")
-        if raw["status"] == "formal"
-        else ("train", "validation")
-    )
-    for split in contract_splits:
-        field = f"{split}_index"
-        resolved[field] = _resolve_path(dataset.get(field), f"dataset.{field}").resolve()
-        _verify_hash(resolved[field], dataset.get(f"{field}_sha256"), field)
-        manifest_hash = split_manifest.get("artifacts", {}).get(split, {}).get("sha256")
-        if manifest_hash != dataset.get(f"{field}_sha256"):
-            raise PairRunError(f"{field} differs from downstream split manifest")
-    for field in ("towns", "weathers"):
-        values = dataset.get(field)
-        if not isinstance(values, list) or not values or len(values) != len(set(values)):
-            raise PairRunError(f"dataset.{field} must be unique and non-empty")
-        if any(not isinstance(value, int) or isinstance(value, bool) for value in values):
-            raise PairRunError(f"dataset.{field} must contain integers")
-
-    variants = raw.get("variants")
-    if not isinstance(variants, dict) or tuple(variants) != VARIANTS:
-        raise PairRunError("variants must define b0 then v")
-    for name in VARIANTS:
-        value = variants[name]
-        resolved[f"{name}_initial_checkpoint"] = _resolve_path(
-            value.get("initial_checkpoint"), f"variants.{name}.initial_checkpoint"
-        ).resolve()
-        _verify_hash(
-            resolved[f"{name}_initial_checkpoint"],
-            value.get("initial_checkpoint_sha256"),
-            f"{name} initial checkpoint",
-        )
-        init_hash = init_manifest.get("variants", {}).get(name, {}).get(
-            "checkpoint_sha256"
-        )
-        if init_hash != value.get("initial_checkpoint_sha256"):
-            raise PairRunError(f"{name} checkpoint differs from initialization manifest")
-
-    sampling = raw.get("smoke_sampling")
-    if raw["status"] == "smoke":
-        if not isinstance(sampling, dict):
-            raise PairRunError("smoke config requires smoke_sampling")
-        _positive_int(sampling.get("seed"), "smoke_sampling.seed", allow_zero=True)
-        for field in ("train_sequences", "validation_sequences"):
-            _positive_int(sampling.get(field), f"smoke_sampling.{field}")
-    elif sampling is not None:
-        raise PairRunError("formal config must not define smoke_sampling")
-
-    training = raw.get("training")
-    if not isinstance(training, dict) or training.get("model") != "interfuser_baseline":
-        raise PairRunError("training.model must be interfuser_baseline")
-    for field in (
-        "seed",
-        "epochs",
-        "batch_size_per_gpu",
-        "workers_per_process",
-        "warmup_epochs",
-        "cooldown_epochs",
-        "master_port",
-        "timeout_seconds_per_variant",
-        "gpu_busy_memory_threshold_mb",
-    ):
-        _positive_int(
-            training.get(field),
-            f"training.{field}",
-            allow_zero=field in {"seed", "workers_per_process", "warmup_epochs", "cooldown_epochs"},
-        )
-    _positive_int(training.get("log_interval", 1), "training.log_interval")
-    if training.get("optimizer") != "adamw" or training.get("scheduler") != "cosine":
-        raise PairRunError("training optimizer/scheduler must be adamw/cosine")
-    for field in (
-        "learning_rate",
-        "backbone_learning_rate",
-        "weight_decay",
-        "color_jitter",
-        "clip_grad",
-    ):
-        _positive_number(
-            training.get(field), f"training.{field}", allow_zero=field == "color_jitter"
-        )
-    scale = training.get("scale")
-    if not isinstance(scale, list) or len(scale) != 2 or any(
-        not isinstance(value, (int, float)) or value <= 0 for value in scale
-    ):
-        raise PairRunError("training.scale must contain two positive numbers")
-    gpus = training.get("gpus")
-    if not isinstance(gpus, list) or len(gpus) < 2 or len(gpus) != len(set(gpus)):
-        raise PairRunError("training.gpus must contain at least two unique indices")
-    if any(not isinstance(value, int) or value < 0 for value in gpus):
-        raise PairRunError("training.gpus must contain nonnegative integers")
-    if not isinstance(training.get("require_clean_git"), bool):
-        raise PairRunError("training.require_clean_git must be boolean")
-    result_root = _resolve_path(raw.get("result_root"), "result_root").resolve()
-    try:
-        result_root.relative_to(REPO_ROOT.resolve())
-    except ValueError as exc:
-        raise PairRunError("result_root escapes repository") from exc
-    normalized = dict(raw)
-    normalized.update(
-        {
-            "path": path,
-            "sha256": sha256_file(path),
-            "resolved": resolved,
-            "split_manifest_loaded": split_manifest,
-            "initialization_manifest_loaded": init_manifest,
-            "result_root_path": result_root,
-        }
-    )
-    return normalized
 
 
 def _read_index(path):
@@ -305,6 +120,12 @@ def _shared_training_args(contract, train_index, validation_index):
         str(train_index),
         "--val-dataset-index",
         str(validation_index),
+        "--lidar-y-axis-multiplier",
+        str(dataset.get("lidar_y_axis_multiplier", -1.0)),
+        "--navigation-frame",
+        dataset.get("navigation_frame", "carla0916_standard_ego"),
+        "--missing-navigation-policy",
+        dataset.get("missing_navigation_policy", "fallback"),
         "--model",
         training["model"],
         "--sched",
@@ -355,6 +176,16 @@ def _shared_training_args(contract, train_index, validation_index):
         "--log-interval",
         str(training.get("log_interval", 1)),
     ]
+    expected_samples = dataset.get("expected_effective_samples")
+    if expected_samples is not None:
+        args.extend(
+            [
+                "--expected-train-samples",
+                str(expected_samples["train"]),
+                "--expected-val-samples",
+                str(expected_samples["validation"]),
+            ]
+        )
     return args
 
 
@@ -523,12 +354,19 @@ def _run_variant(contract, variant, train_index, validation_index, run_dir):
         [str(REPO_ROOT), str(INTERFUSER_ROOT), environment.get("PYTHONPATH", "")]
     ).rstrip(os.pathsep)
     environment.setdefault("OMP_NUM_THREADS", "1")
-    ensure_gpus_available(
-        training["gpus"], training["gpu_busy_memory_threshold_mb"]
-    )
+    gpu_resource_policy = training.get("gpu_resource_policy", "exclusive")
+    if gpu_resource_policy == "shared_capacity":
+        ensure_gpus_have_free_memory(
+            training["gpus"], training["gpu_minimum_free_memory_mb"]
+        )
+    else:
+        ensure_gpus_available(
+            training["gpus"], training["gpu_busy_memory_threshold_mb"]
+        )
     ensure_ports_free([training["master_port"]])
     monitor = _GpuMemoryMonitor(training["gpus"])
     process = None
+    owned_gpu_processes = []
     started = time.monotonic()
     timed_out = False
     with log_path.open("w", encoding="utf-8") as log:
@@ -549,13 +387,22 @@ def _run_variant(contract, variant, train_index, validation_index, run_dir):
                 timed_out = True
                 exit_code = 124
         finally:
+            if process is not None and gpu_resource_policy == "shared_capacity":
+                owned_gpu_processes = gpu_processes_in_process_groups(
+                    training["gpus"], [process.pid]
+                )
             if process is not None:
                 _stop_process_group(process)
             peaks = monitor.stop()
     port_release = wait_for_ports_free([training["master_port"]])
-    gpu_release = wait_for_gpus_available(
-        training["gpus"], training["gpu_busy_memory_threshold_mb"]
-    )
+    if gpu_resource_policy == "shared_capacity":
+        gpu_release = wait_for_gpu_processes_exit(
+            [int(item["pid"]) for item in owned_gpu_processes]
+        )
+    else:
+        gpu_release = wait_for_gpus_available(
+            training["gpus"], training["gpu_busy_memory_threshold_mb"]
+        )
     result = {
         "variant": variant,
         "command": command,
@@ -565,6 +412,8 @@ def _run_variant(contract, variant, train_index, validation_index, run_dir):
         "external_timeout": timed_out,
         "duration_seconds": round(time.monotonic() - started, 3),
         "gpu_peak_memory_mb": peaks,
+        "gpu_resource_policy": gpu_resource_policy,
+        "gpu_owned_compute_processes": owned_gpu_processes,
         "gpu_monitor_error": monitor.error,
         "gpu_release_wait_seconds": gpu_release,
         "port_release_wait_seconds": port_release,

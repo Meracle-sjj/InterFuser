@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "status": "pilot",
+  "protocol_document": "docs/interfuser_official_stage2_protocol_v1.md",
+  "downstream_split_manifest": "results/thesis_m2/interfuser_downstream_split_v1_20260724/split_manifest.json",
+  "downstream_split_manifest_sha256": "711a70dcfffd7da9e49d68a71ef83f4ee3f1dc8a49d0b41c6d06f7b3d3bb4f70",
+  "initialization_manifest": "results/thesis_m2/m2-interfuser-official-visual-swap-init-v1-seed20260723-20260814-v1/initialization_manifest.json",
+  "initialization_manifest_sha256": "563782c4b33d6b6b74186961b03ba9eff96b12e02594cda1674320320a4d1755",
+  "dataset": {
+    "root": "/data1/shijj/interfuser_data",
+    "train_index": "results/thesis_m2/interfuser_downstream_split_v1_20260724/train_dataset_index.txt",
+    "train_index_sha256": "3173d0bd6e3e7b9fad4ee26c1051fe2b9f0c7a85deb509e05601e49fc94d345c",
+    "validation_index": "results/thesis_m2/interfuser_downstream_split_v1_20260724/validation_dataset_index.txt",
+    "validation_index_sha256": "54c106b833db446800251222bb530e9cbed04910d89b03c3d5903c9b9259095f",
+    "towns": [1, 3, 4, 5],
+    "weathers": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 20],
+    "lidar_y_axis_multiplier": 1.0,
+    "navigation_frame": "carla0916_compass",
+    "missing_navigation_policy": "drop",
+    "expected_effective_samples": {
+      "train": 171256,
+      "validation": 4389
+    }
+  },
+  "variants": {
+    "b0": {
+      "initialization_manifest_variant": "official_b0",
+      "initial_checkpoint": "results/thesis_m2/m2-interfuser-official-visual-swap-init-v1-seed20260723-20260814-v1/official_b0_initial_checkpoint.pth",
+      "initial_checkpoint_sha256": "15d70aa489f33b84b8cad0988aa0b8f1787ee626069d8c95c3e9e518e781a0ce"
+    },
+    "v": {
+      "initialization_manifest_variant": "official_b0_v",
+      "initial_checkpoint": "results/thesis_m2/m2-interfuser-official-visual-swap-init-v1-seed20260723-20260814-v1/official_b0_v_initial_checkpoint.pth",
+      "initial_checkpoint_sha256": "1ca2c2204fd0738f85ed5d098fb4b16036597a4efda05248182da968761d4954"
+    }
+  },
+  "training": {
+    "model": "interfuser_baseline",
+    "seed": 20260814,
+    "epochs": 3,
+    "batch_size_per_gpu": 32,
+    "workers_per_process": 8,
+    "optimizer": "adamw",
+    "learning_rate": 0.0005,
+    "backbone_learning_rate": 0.0002,
+    "weight_decay": 0.05,
+    "scheduler": "cosine",
+    "warmup_epochs": 1,
+    "cooldown_epochs": 0,
+    "scale": [0.9, 1.1],
+    "color_jitter": 0.1,
+    "clip_grad": 10.0,
+    "gpus": [1],
+    "master_port": 29671,
+    "timeout_seconds_per_variant": 10800,
+    "gpu_resource_policy": "shared_capacity",
+    "gpu_minimum_free_memory_mb": 24000,
+    "log_interval": 50,
+    "require_clean_git": true
+  },
+  "result_root": "results/thesis_m2"
+}

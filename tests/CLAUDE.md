@@ -27,10 +27,10 @@ test_semantic_pretraining.py: 验证 M2 配置哈希、smoke/pilot/optimization 
 test_interfuser_downstream_indexes.py: 验证 M1 holdout route group 的全量投影、未见组只进 train、索引哈希/覆盖门禁与 CarlaMVDetDataset 显式 index 选择。
 test_interfuser_visual_pair.py: 验证 B0/V 初始 checkpoint 仅改变 RGB 共享骨干 alias、非 RGB 状态哈希相同且全模型 strict load。
 test_interfuser_visual_swap_pair.py: 验证对照分支原样继承历史/官方底座、视觉分支仅替换 RGB alias、非 RGB 状态相同，并覆盖 checkpoint 架构别名与错误元数据拒绝。
-test_run_interfuser_visual_pair.py: 验证 B0/V 训练命令共享预算、smoke 索引确定性、formal test index 强制绑定、args 允许差异归一和 summary 完整性门禁。
+test_run_interfuser_visual_pair.py: 验证 B0/V 训练命令共享预算与坐标、单 GPU pilot 表达、smoke 索引确定性、formal test index 强制绑定、args 差异归一和 summary 完整性门禁。
 test_interfuser_offline_metrics.py: 验证冻结 test 的 traffic AP/AUC/IoU、逐类混淆、正确 stop-sign head、waypoint 精确分母、目标条件连续帧残差与缺失支持门禁。
 test_run_interfuser_visual_test.py: 验证预注册 test 契约、索引哈希/相邻帧计数漂移、formal 未完成阻断、B0/V checkpoint/schema 准入和固定方向差值。
-test_run_interfuser_modality_ablation.py: 验证 CARLA 采集版本的 LiDAR y 轴乘数拒绝非法值、RGB/LiDAR 单变量干预不污染其他输入、配对输出效应量分母正确及 weak/material 阈值方向稳定。
+test_run_interfuser_modality_ablation.py: 验证 CARLA 采集版本的 LiDAR y 轴、compass 导航 frame、缺失导航帧过滤、RGB/LiDAR 单变量干预与 weak/material 阈值方向。
 test_summarize_semantic_learning_curve.py: 验证 M2 pilot 汇总拒绝缺失预算、非嵌套 train、validation 漂移、pipeline/provenance 异常与产物哈希漂移。
 test_summarize_thesis_baseline.py: 验证 M0 汇总器拒绝缺失、重复、基础设施失败和未授权输入漂移，区分评测语义与共享 GPU 资源策略后确定性归约完整路线×种子矩阵。
 test_summarize_interfuser_visual_d7.py: 验证 M2 H1 汇总器要求 B0/V 各 21/21、固定 attempt 顺序、checkpoint-only 差异，并按冻结 offline+D7 规则生成结论。

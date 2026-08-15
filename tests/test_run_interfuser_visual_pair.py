@@ -1,7 +1,7 @@
 """
-[INPUT]: 依赖 run_interfuser_visual_pair 的 smoke 索引抽样、训练命令、summary 与 args 可比性 API。
-[OUTPUT]: 验证 B0/V 命令共享同一训练参数、smoke 抽样确定性、formal test index 强制绑定、允许的 provenance 字段被归一且真实预算漂移可见。
-[POS]: tests 的 M2 H1 配对训练编排回归，不启动 GPU 或外部训练进程。
+[INPUT]: 依赖 run_interfuser_visual_pair 的 smoke 索引抽样、Stage 2 坐标参数、训练命令、summary 与 args 可比性 API。
+[OUTPUT]: 验证 B0/V 命令共享预算和数据坐标、单 GPU pilot 可表达、formal test index 强制绑定，以及真实参数漂移可见。
+[POS]: tests 的 M2 H1 配对训练编排回归；不启动 GPU，重点阻止初始化以外的数据与训练变量分叉。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
@@ -29,7 +29,14 @@ class RunInterfuserVisualPairTests(unittest.TestCase):
         root = Path(root)
         return {
             "status": "smoke",
-            "dataset": {"towns": [1, 3], "weathers": [0, 1]},
+            "dataset": {
+                "towns": [1, 3],
+                "weathers": [0, 1],
+                "lidar_y_axis_multiplier": 1.0,
+                "navigation_frame": "carla0916_compass",
+                "missing_navigation_policy": "drop",
+                "expected_effective_samples": {"train": 11, "validation": 7},
+            },
             "training": {
                 "gpus": [6, 7],
                 "master_port": 29655,
@@ -69,6 +76,14 @@ class RunInterfuserVisualPairTests(unittest.TestCase):
         marker = b0.index("--initial-checkpoint")
         self.assertEqual(b0[:marker], v[:marker])
         self.assertNotEqual(b0[marker + 1], v[marker + 1])
+        self.assertEqual(b0[b0.index("--lidar-y-axis-multiplier") + 1], "1.0")
+        self.assertEqual(
+            b0[b0.index("--navigation-frame") + 1], "carla0916_compass"
+        )
+        self.assertEqual(
+            b0[b0.index("--missing-navigation-policy") + 1], "drop"
+        )
+        self.assertEqual(b0[b0.index("--expected-train-samples") + 1], "11")
         with self.assertRaisesRegex(PairRunError, "unknown variant"):
             build_training_command(
                 contract, "x", "train.txt", "validation.txt", Path(root) / "x"

@@ -1,7 +1,7 @@
 """
-[INPUT]: 依赖 CARLA route sequence 目录、测量/参与者标签、RGB/LiDAR 文件、显式 dataset index 与采集版本的 LiDAR y 轴约定。
-[OUTPUT]: 对外提供 CarlaMVDetDataset、可配置符号的 LiDAR 直方图编码与坐标变换，生成 InterFuser 多任务训练样本。
-[POS]: timm.data 的 CARLA 下游数据适配层；只解析契约选中的 sequence，不自行决定 train/validation 归属。
+[INPUT]: 依赖 CARLA route sequence 目录、测量/参与者标签、RGB/LiDAR 文件、显式 dataset index，以及采集版本的 LiDAR 与导航坐标契约。
+[OUTPUT]: 对外提供 CarlaMVDetDataset、navigation_rotation_matrix、可配置符号的 LiDAR 直方图编码与严格导航字段过滤，生成 InterFuser 多任务训练样本。
+[POS]: timm.data 的 CARLA 下游数据适配层；将旧 yaw 与 CARLA 0.9.16 compass 明确隔离，只解析契约选中的有效帧。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
@@ -23,6 +23,41 @@ from skimage.measure import block_reduce
 from .augmenter import augment
 
 _logger = logging.getLogger(__name__)
+
+
+NAVIGATION_FRAMES = (
+    "legacy_upstream_yaw",
+    "carla0916_standard_ego",
+    "carla0916_compass",
+)
+MISSING_NAVIGATION_POLICIES = ("fallback", "drop")
+REQUIRED_NAVIGATION_FIELDS = (
+    "command",
+    "x_command",
+    "y_command",
+    "future_waypoints",
+    "theta",
+)
+
+
+def navigation_rotation_matrix(ego_theta, navigation_frame):
+    """Return the world-to-model rotation for one declared measurement schema."""
+    if navigation_frame == "legacy_upstream_yaw":
+        rotation = np.pi / 2 + ego_theta
+    elif navigation_frame == "carla0916_standard_ego":
+        rotation = np.pi / 2 - ego_theta
+    elif navigation_frame == "carla0916_compass":
+        rotation = ego_theta
+    else:
+        raise ValueError(
+            f"navigation_frame must be one of {NAVIGATION_FRAMES}, got {navigation_frame}"
+        )
+    return np.array(
+        [
+            [np.cos(rotation), -np.sin(rotation)],
+            [np.sin(rotation), np.cos(rotation)],
+        ]
+    )
 
 
 def lidar_to_histogram_features(lidar, crop=256):
@@ -102,6 +137,8 @@ class CarlaMVDetDataset(BaseIODataset):
         augment_prob=0.0,
         dataset_index=None,
         lidar_y_axis_multiplier=-1.0,
+        navigation_frame="carla0916_standard_ego",
+        missing_navigation_policy="fallback",
     ):
         super().__init__()
 
@@ -127,6 +164,15 @@ class CarlaMVDetDataset(BaseIODataset):
         self.lidar_y_axis_multiplier = float(lidar_y_axis_multiplier)
         if self.lidar_y_axis_multiplier not in (-1.0, 1.0):
             raise ValueError("lidar_y_axis_multiplier must be -1.0 or 1.0")
+        if navigation_frame not in NAVIGATION_FRAMES:
+            raise ValueError(f"navigation_frame must be one of {NAVIGATION_FRAMES}")
+        if missing_navigation_policy not in MISSING_NAVIGATION_POLICIES:
+            raise ValueError(
+                "missing_navigation_policy must be one of "
+                f"{MISSING_NAVIGATION_POLICIES}"
+            )
+        self.navigation_frame = navigation_frame
+        self.missing_navigation_policy = missing_navigation_policy
 
         self.augment_prob = augment_prob
         if self.augment_prob > 0:
@@ -193,6 +239,31 @@ class CarlaMVDetDataset(BaseIODataset):
                 
             for i in range(frames):
                 self.route_frames.append((os.path.join(root, path), i))
+
+        self.indexed_frame_count = len(self.route_frames)
+        self.dropped_navigation_frame_count = 0
+        if self.missing_navigation_policy == "drop":
+            valid_route_frames = []
+            for route_dir, frame_id in self.route_frames:
+                try:
+                    measurements = self._load_json(
+                        os.path.join(
+                            route_dir, "measurements", "%04d.json" % frame_id
+                        )
+                    )
+                except (FileNotFoundError, json.JSONDecodeError, OSError):
+                    self.dropped_navigation_frame_count += 1
+                    continue
+                if all(field in measurements for field in REQUIRED_NAVIGATION_FIELDS):
+                    valid_route_frames.append((route_dir, frame_id))
+                else:
+                    self.dropped_navigation_frame_count += 1
+            self.route_frames = valid_route_frames
+            _logger.info(
+                "Navigation field filter retained %d/%d frames",
+                len(self.route_frames),
+                self.indexed_frame_count,
+            )
 
         _logger.info("Sub route dir nums: %d" % len(self.route_frames))
 
@@ -425,16 +496,8 @@ class CarlaMVDetDataset(BaseIODataset):
         else:
             ego_y = measurements["y"]
         
-        # Coordinate Correction: Use consistent rotation for Target/Waypoints (match Lidar)
-        # Old (Twisted): np.pi / 2 + ego_theta
-        # New (Standard Ego): np.pi / 2 - ego_theta
-        theta = np.pi / 2 - ego_theta
-        R = np.array(
-            [
-                [np.cos(theta), -np.sin(theta)],
-                [np.sin(theta), np.cos(theta)],
-            ]
-        )
+        # CARLA 0.9.16 采集器保存 compass；旧上游数据保存 yaw，二者不可混用。
+        R = navigation_rotation_matrix(ego_theta, self.navigation_frame)
         local_command_point = np.array([x_command - ego_x, y_command - ego_y])
         local_command_point = R.T.dot(local_command_point)
         if any(np.isnan(local_command_point)):
@@ -522,7 +585,7 @@ class CarlaMVDetDataset(BaseIODataset):
             img_traffic = img_traffic[:100, 40:140, None]
             img_traffic = transforms.ToTensor()(img_traffic)
 
-        img_traj = generate_future_waypoints(measurements)
+        img_traj = generate_future_waypoints(measurements, rotation_matrix=R)
         img_traj = img_traj[:100, 40:140, None]
         img_traj = transforms.ToTensor()(img_traj)
 

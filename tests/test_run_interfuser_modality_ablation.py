@@ -1,17 +1,23 @@
 """
-[INPUT]: 依赖 CarlaMVDetDataset 的显式 LiDAR y 轴契约，以及模态审计器的注册干预、配对输出累加器和预注册依赖判定。
-[OUTPUT]: 验证 LiDAR 坐标乘数拒绝非法值、RGB/LiDAR 单变量注入、输出效应量分母及 weak/material 阈值方向。
-[POS]: tests 的模态因果审计回归，阻止消融同时污染非目标输入或在结果后漂移判定口径。
+[INPUT]: 依赖 CarlaMVDetDataset 的显式 LiDAR/导航坐标契约，以及模态审计器的注册干预、配对输出累加器和预注册依赖判定。
+[OUTPUT]: 验证 LiDAR 轴、CARLA 0.9.16 compass 旋转、非法契约拒绝、单变量注入与 weak/material 阈值方向。
+[POS]: tests 的模态与数据契约回归；阻止错误 heading schema 把前向 waypoint 旋到横向后继续训练。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
+import math
+import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import numpy as np
 import torch
 
-from timm.data.carla_dataset import CarlaMVDetDataset
+from timm.data.carla_dataset import (
+    CarlaMVDetDataset,
+    navigation_rotation_matrix,
+)
 
 from tools.evaluation.run_interfuser_modality_ablation import (
     OutputSensitivityAccumulator,
@@ -73,6 +79,53 @@ class LidarAxisContractTest(unittest.TestCase):
                     dataset_index=str(index),
                     lidar_y_axis_multiplier=0.0,
                 )
+
+
+class NavigationFrameContractTest(unittest.TestCase):
+    def test_carla_compass_maps_world_forward_to_model_negative_y(self):
+        compass = math.pi / 2
+        world_forward = np.array([4.0, 0.0])
+        rotation = navigation_rotation_matrix(compass, "carla0916_compass")
+        np.testing.assert_allclose(
+            rotation.T.dot(world_forward), np.array([0.0, -4.0]), atol=1e-6
+        )
+
+    def test_invalid_navigation_contract_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "navigation_frame"):
+            navigation_rotation_matrix(0.0, "guessed_frame")
+
+    def test_drop_policy_removes_only_incomplete_navigation_frames(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            route = root / "town01_route_w0_sample"
+            measurements = route / "measurements"
+            measurements.mkdir(parents=True)
+            complete = {
+                "command": 4,
+                "x_command": 1.0,
+                "y_command": 2.0,
+                "future_waypoints": [],
+                "theta": 0.0,
+            }
+            (measurements / "0000.json").write_text(
+                json.dumps(complete), encoding="utf-8"
+            )
+            (measurements / "0001.json").write_text(
+                json.dumps({"theta": 0.0}), encoding="utf-8"
+            )
+            index = root / "dataset_index.txt"
+            index.write_text("town01_route_w0_sample 2\n", encoding="utf-8")
+            dataset = CarlaMVDetDataset(
+                root,
+                towns=[1],
+                weathers=[0],
+                dataset_index=str(index),
+                navigation_frame="carla0916_compass",
+                missing_navigation_policy="drop",
+            )
+            self.assertEqual(dataset.indexed_frame_count, 2)
+            self.assertEqual(len(dataset), 1)
+            self.assertEqual(dataset.dropped_navigation_frame_count, 1)
 
 
 class OutputSensitivityAccumulatorTest(unittest.TestCase):

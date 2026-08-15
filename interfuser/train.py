@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-[INPUT]: 依赖 timm 模型/优化器 API、CARLA 下游数据集、版本化初始 checkpoint 与可选独立 train/validation index。
+[INPUT]: 依赖 timm 模型/优化器 API、CARLA 下游数据集、版本化初始 checkpoint，以及显式 split、LiDAR 与导航坐标契约。
 [OUTPUT]: 对外提供 InterFuser 单机/分布式训练 CLI，生成逐 epoch 指标、TensorBoard 事件与 strict-loadable checkpoint。
-[POS]: interfuser 的下游训练入口；模型结构由 timm.models 提供，数据划分由显式 index 契约控制。
+[POS]: interfuser 的下游训练入口；模型结构由 timm.models 提供，数据划分和传感器坐标由版本化参数控制。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 
 ImageNet Training Script
@@ -160,6 +160,41 @@ parser.add_argument(
     type=str,
     metavar="PATH",
     help="optional dataset index used only for the CARLA validation split",
+)
+parser.add_argument(
+    "--lidar-y-axis-multiplier",
+    default=-1.0,
+    choices=(-1.0, 1.0),
+    type=float,
+    help="LiDAR y-axis multiplier declared by the collection schema",
+)
+parser.add_argument(
+    "--navigation-frame",
+    default="carla0916_standard_ego",
+    choices=(
+        "legacy_upstream_yaw",
+        "carla0916_standard_ego",
+        "carla0916_compass",
+    ),
+    help="measurement heading schema used for target point and waypoint rotation",
+)
+parser.add_argument(
+    "--missing-navigation-policy",
+    default="fallback",
+    choices=("fallback", "drop"),
+    help="fallback for legacy runs or deterministically drop incomplete frames",
+)
+parser.add_argument(
+    "--expected-train-samples",
+    default=None,
+    type=int,
+    help="fail when the effective CARLA train sample count differs",
+)
+parser.add_argument(
+    "--expected-val-samples",
+    default=None,
+    type=int,
+    help="fail when the effective CARLA validation sample count differs",
 )
 parser.add_argument(
     "--saver-decreasing",
@@ -1120,6 +1155,9 @@ def main():
             multi_view=args.multi_view,
             augment_prob=args.augment_prob,
             dataset_index=args.train_dataset_index,
+            lidar_y_axis_multiplier=args.lidar_y_axis_multiplier,
+            navigation_frame=args.navigation_frame,
+            missing_navigation_policy=args.missing_navigation_policy,
         )
         dataset_eval = create_carla_dataset(
             args.dataset,
@@ -1133,7 +1171,19 @@ def main():
             multi_view=args.multi_view,
             augment_prob=args.augment_prob,
             dataset_index=args.val_dataset_index,
+            lidar_y_axis_multiplier=args.lidar_y_axis_multiplier,
+            navigation_frame=args.navigation_frame,
+            missing_navigation_policy=args.missing_navigation_policy,
         )
+        for split_name, dataset, expected_samples in (
+            ("train", dataset_train, args.expected_train_samples),
+            ("validation", dataset_eval, args.expected_val_samples),
+        ):
+            if expected_samples is not None and len(dataset) != expected_samples:
+                raise RuntimeError(
+                    f"effective {split_name} samples={len(dataset)} differ from "
+                    f"expected={expected_samples}"
+                )
     else:
         dataset_train = create_dataset(
             args.dataset,

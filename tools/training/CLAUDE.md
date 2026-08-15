@@ -11,6 +11,7 @@ summarize_semantic_hazard_holdout.py: 严格校验 baseline/augmented 专项样�
 summarize_semantic_learning_curve.py: 验证 pilot run 的完整预算矩阵、嵌套 train 样本、相同完整 validation、provenance 与产物哈希，并确定性归约学习曲线。
 interfuser_visual_pair.py: 冻结 ImageNet B0 与交通域 V 的 RGB 骨干差异，生成非 RGB 张量逐值相同且可被 InterFuser strict load 的全模型初始 checkpoint 对。
 interfuser_visual_swap_pair.py: strict load 历史或官方固定底座，显式校验 checkpoint 原始架构别名并生成可命名的对照/视觉替换 checkpoint 对，证明底座全状态保真且唯一变量是交通域 RGB 骨干替换。
-run_interfuser_visual_pair.py: 串行编排 B0/V 下游训练，守卫 GPU/分布式端口/进程组，并严格归约训练参数、summary、checkpoint 和资源释放 manifest。
+interfuser_pair_contract.py: 集中验证配对训练的 split/初始化哈希、传感器坐标、有效帧、预算、单/多 GPU 与资源策略，向 runner 暴露已解析契约。
+run_interfuser_visual_pair.py: 串行编排 B0/V smoke/pilot/formal 下游训练，冻结初始化别名、传感器坐标、有效帧、单/多 GPU 与独占/共享容量资源策略，并严格归约参数、summary、checkpoint 和释放 manifest。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

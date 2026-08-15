@@ -27,6 +27,7 @@ test_semantic_pretraining.py: 验证 M2 配置哈希、smoke/pilot/optimization 
 test_interfuser_downstream_indexes.py: 验证 M1 holdout route group 的全量投影、未见组只进 train、索引哈希/覆盖门禁与 CarlaMVDetDataset 显式 index 选择。
 test_interfuser_visual_pair.py: 验证 B0/V 初始 checkpoint 仅改变 RGB 共享骨干 alias、非 RGB 状态哈希相同且全模型 strict load。
 test_interfuser_visual_swap_pair.py: 验证对照分支原样继承历史/官方底座、视觉分支仅替换 RGB alias、非 RGB 状态相同，并覆盖 checkpoint 架构别名与错误元数据拒绝。
+test_interfuser_train_validation.py: 验证单 GPU validation 对全部 loss/accuracy 张量执行恒等归约，阻止仅分布式路径赋值造成 epoch 后崩溃。
 test_run_interfuser_visual_pair.py: 验证 B0/V 训练命令共享预算与坐标、单 GPU pilot 表达、smoke 索引确定性、formal test index 强制绑定、args 差异归一和 summary 完整性门禁。
 test_interfuser_offline_metrics.py: 验证冻结 test 的 traffic AP/AUC/IoU、逐类混淆、正确 stop-sign head、waypoint 精确分母、目标条件连续帧残差与缺失支持门禁。
 test_run_interfuser_visual_test.py: 验证预注册 test 契约、索引哈希/相邻帧计数漂移、formal 未完成阻断、B0/V checkpoint/schema 准入和固定方向差值。

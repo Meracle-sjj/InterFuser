@@ -1683,6 +1683,13 @@ def train_one_epoch(
     return OrderedDict([("loss", losses_m.avg)])
 
 
+def _reduce_validation_tensors(tensors, args):
+    """Keep validation metric assignment identical on single and distributed GPUs."""
+    if args.distributed:
+        return tuple(reduce_tensor(tensor.data, args.world_size) for tensor in tensors)
+    return tuple(tensor.data for tensor in tensors)
+
+
 def validate(
     epoch, model, loader, loss_fns, args, writer, amp_autocast=suppress, log_suffix=""
 ):
@@ -1758,33 +1765,32 @@ def validate(
             )[0]
             stop_sign_error = accuracy(output[3], target[3])[0]
 
-            if args.distributed:
-                reduced_loss = reduce_tensor(loss.data, args.world_size)
-                reduced_loss_traffic = reduce_tensor(loss_traffic.data, args.world_size)
-                reduced_loss_velocity = reduce_tensor(
-                    loss_velocity.data, args.world_size
-                )
-                reduced_loss_waypoints = reduce_tensor(
-                    loss_waypoints.data, args.world_size
-                )
-                reduced_loss_junction = reduce_tensor(
-                    loss_junction.data, args.world_size
-                )
-                reduced_loss_traffic_light_state = reduce_tensor(
-                    loss_traffic_light_state.data, args.world_size
-                )
-                reduced_loss_stop_sign = reduce_tensor(
-                    loss_stop_sign.data, args.world_size
-                )
-                reduced_junction_error = reduce_tensor(junction_error, args.world_size)
-                reduced_traffic_light_state_error = reduce_tensor(
-                    traffic_light_state_error, args.world_size
-                )
-                reduced_stop_sign_error = reduce_tensor(
-                    stop_sign_error, args.world_size
-                )
-            else:
-                reduced_loss = loss.data
+            (
+                reduced_loss,
+                reduced_loss_traffic,
+                reduced_loss_velocity,
+                reduced_loss_waypoints,
+                reduced_loss_junction,
+                reduced_loss_traffic_light_state,
+                reduced_loss_stop_sign,
+                reduced_junction_error,
+                reduced_traffic_light_state_error,
+                reduced_stop_sign_error,
+            ) = _reduce_validation_tensors(
+                (
+                    loss,
+                    loss_traffic,
+                    loss_velocity,
+                    loss_waypoints,
+                    loss_junction,
+                    loss_traffic_light_state,
+                    loss_stop_sign,
+                    junction_error,
+                    traffic_light_state_error,
+                    stop_sign_error,
+                ),
+                args,
+            )
 
             torch.cuda.synchronize()
 

@@ -14,6 +14,7 @@ CLAUDE.md: 实验事实记录模块地图，约束摘要只能引用已完成 ru
 2026-08-14-m2-official-visual-swap-route39-zero-ft.md: M2 H1 作者发布底座上的交通语义 RGB 骨干替换记录，固化 strict-load 不变量、route39 三 seed 零微调结果与 D7 准入边界。
 2026-08-14-m2-official-modality-ablation.md: M2 H1 官方 B0/B0-V 的 validation 与 route39 模态因果审计，固化 v1 空 LiDAR 失效、v2 坐标密度准入、RGB 实质依赖及视觉替换任务表征退化边界。
 2026-08-15-m2-official-stage2-data-contract-preflight.md: M2 H1 官方 B0/V Stage 2 数据契约预检，固化 compass 轨迹旋转、LiDAR `+1`、缺失导航帧剔除、真实样本自证与旧离线指标失效边界。
+2026-08-15-m2-official-stage2-pilot-v1-single-gpu-validation-incident.md: M2 H1 三轮 pilot 首次单卡运行事故，固化 B0 epoch0 完成后 validation 未赋值归约张量、无 checkpoint 可续跑及新 Run ID 全量重跑边界。
 2026-07-23-m1-semantic-split-and-alignment.md: M1 数据 v1 冻结记录，固化 Town+route 无泄漏划分、三组类别覆盖、内容哈希与九类 RGB/mask 人工对齐结论。
 2026-07-23-m2-semantic-smoke-v1.md: M2 首次语义预训练 smoke，记录 deterministic CUDA NLL 失败前序、修复后的有效训练/验证、checkpoint 与同构骨干迁移证据。
 2026-07-23-m2-semantic-learning-curve-v1.md: M2 三点数据量 pilot，固化嵌套 25%/50%/100% train、完整 validation、逐类指标、产物哈希与优化/数据边界结论。

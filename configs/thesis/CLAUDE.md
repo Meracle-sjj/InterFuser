@@ -13,6 +13,7 @@ semantic_pretraining_optimization_probe_v1.json: M2 优化充分性诊断配置�
 semantic_pretraining_class_weight_probe_v1.json: M2 类别失衡诊断配置，仅在同一五轮全量预算中加入由无权重 train 像素支持派生的 inverse-sqrt 显式权重。
 semantic_pretraining_pedestrian_hazard_probe_v1.json: M2 行人危险数据扩充 probe，保持原 validation、五轮预算与 inverse-sqrt 权重，唯一增加经碰撞真值审计的 train sequence。
 interfuser_downstream_split_v1.json: M2 H1 下游划分配置，将 M1 冻结 Town+route holdout 扩展到全量 dataset_index，未见 route group 仅进 train。
+interfuser_downstream_split_v2.json: M2 H1 行人分层下游配置，锁定 M1 已分配 route group，只从语义预训练未使用组确定性补足 train/validation/test=`45/8/8` 行人路线覆盖。
 interfuser_visual_initialization_v1.json: M2 H1 初始化配置，冻结 InterFuser/ResNet 代码哈希、ImageNet B0 与交通域 V 权重及唯一 RGB 变量不变式。
 interfuser_visual_initialization_pedestrian_hazard_v1.json: M2 H1 行人危险骨干迁移配置，以新 best-epoch5 导出替换 V RGB 骨干，保持 B0 与非 RGB 张量不变式。
 interfuser_visual_swap_initialization_v1.json: M2 H1 固定底座替换配置，以历史 M0 epoch26 为共同全模型状态，仅允许行人危险语义 ResNet50d 覆盖 M0-V 的 RGB 骨干。
@@ -20,6 +21,7 @@ interfuser_official_visual_swap_initialization_v1.json: M2 H1 官方底座替换
 interfuser_official_modality_ablation_v1.json: M2 H1 官方底座模态依赖配置，冻结 validation 全量 4,613 帧、B0/B0-V checkpoint、四种单模态干预、GPU1 资源门槛和 RGB/LiDAR 效应量阈值。
 interfuser_official_modality_ablation_v2.json: M2 H1 CARLA 0.9.16 LiDAR 坐标修正版模态配置，保持 v1 干预不变，显式取消重复 y 轴反号并以输入密度门槛阻止空 LiDAR 充当对照。
 interfuser_official_stage2_pilot_v1.json: M2 H1 官方 B0/V 的 Stage 2 三轮全模型协同适配配置，冻结 compass 导航 frame、LiDAR `+1`、缺失导航帧剔除和 GPU1 单卡全局 batch 32。
+interfuser_official_stage2_pilot_scene_split_v2.json: M2 H1 scene-split v2 配对重训配置，继承官方 B0/V 三轮预算并绑定 45/8/8 行人路线分层后的 train/validation 索引。
 interfuser_visual_swap_route39_m0_ft_v1.json: M2 H1 M0-FT 零微调诊断配置，绑定固定底座保真 checkpoint，并只准运行 route39 seed0 的闭环包装校准。
 interfuser_visual_swap_route39_m0_v_v1.json: M2 H1 M0-V 零微调诊断配置，绑定语义 RGB 替换 checkpoint，以 route39 seed0 检测旧融合头的特征分布失配。
 interfuser_visual_swap_m0_ft_gpu1_v1.json: M2 H1 M0-FT D7-minus-route39 GPU1 首次资源迁移配置，将 agent/CARLA 固定到同一 RTX 5090，并显式准入 1 GiB 门槛内的既有 compute context。

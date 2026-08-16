@@ -14,6 +14,8 @@ interfuser_official_visual_swap_protocol_v1.md: M2 H1 官方可驾驶底座的�
 interfuser_official_modality_ablation_protocol_v1.md: M2 H1 官方底座 RGB/LiDAR 因果消融协议，以配对输出变化和真值退化区分融合器忽略视觉与视觉表征不足。
 interfuser_official_modality_ablation_protocol_v2.md: M2 H1 CARLA 0.9.16 LiDAR 坐标修正审计协议，宣告空 LiDAR 的 v1 失效并冻结显式 y 轴乘数、输入密度准入与原消融阈值。
 interfuser_official_stage2_protocol_v1.md: M2 H1 官方 B0/V 下游协同适配协议，冻结 compass/点云/导航字段契约、三轮同预算 pilot 与 route39 扩展门槛。
+interfuser_downstream_scene_split_v2_protocol.md: M2 H1 行人场景测量修复协议，冻结只从语义预训练未使用 route group 扩充 holdout 的选择、结构验收、重训和 test 解封边界。
+interfuser_official_stage2_protocol_v2.md: M2 H1 scene-split 数据测量修正版 Stage 2 协议，继承 v1 模型预算并禁止旧 checkpoint 污染新 holdout。
 experiment_records/: 论文实验事实记录，使用 run ID 与 SHA-256 连接 Git 配置和 results/ 原始产物。
 handoff_pedestrian_visual_review.md: 历史行人单帧复核交接清单；已由连续测量帧碰撞威胁审计替代，仅保留为 584 sequence 的来源索引。
 traffic_element_label_schema.md: 路线关联交通灯、虚拟停止边界及其 CARLA/Leaderboard 几何来源的 schema v2 契约。

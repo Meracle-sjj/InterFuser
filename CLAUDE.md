@@ -27,6 +27,7 @@ configs/thesis/semantic_pretraining_optimization_probe_v1.json - M2 全量数据
 configs/thesis/semantic_pretraining_class_weight_probe_v1.json - M2 类别失衡诊断契约，冻结 inverse-sqrt 像素频率权重与来源 run
 configs/thesis/semantic_pretraining_pedestrian_hazard_probe_v1.json - M2 行人碰撞威胁 train-only 扩充 probe，冻结原验证口径、专项 holdout 与五轮预算
 configs/thesis/interfuser_downstream_split_v1.json - M2 H1 下游无泄漏 Town+route 全量索引投影契约
+configs/thesis/interfuser_downstream_split_v2.json - M2 H1 行人场景分层下游契约，只从语义预训练未使用的 route group 确定性补足双 holdout
 configs/thesis/interfuser_visual_initialization_v1.json - M2 H1 B0/V 单变量视觉初始化与代码/权重哈希契约
 configs/thesis/interfuser_visual_initialization_pedestrian_hazard_v1.json - M2 H1 行人危险骨干的 B0/V 单变量严格迁移契约
 configs/thesis/interfuser_visual_swap_initialization_v1.json - M2 H1 固定历史 M0 底座的 M0-FT/M0-V 单 RGB 骨干替换契约
@@ -48,6 +49,7 @@ configs/thesis/interfuser_visual_pair_formal_v1.json - M2 H1 B0/V 正式下游�
 configs/thesis/interfuser_visual_pair_test_v1.json - M2 H1 冻结 test 的预注册指标、formal 产物准入与单 GPU 资源契约
 configs/thesis/interfuser_visual_d7_build_v1.json - M2 H1 D7 配置冻结契约，在 formal/test 有效后生成哈希绑定的 B0/V 闭环配置
 configs/thesis/interfuser_official_stage2_pilot_v1.json - M2 H1 官方底座 Stage 2 三轮配对协同适配契约，冻结 CARLA 0.9.16 坐标、有效帧和 GPU1 单卡全局 batch
+configs/thesis/interfuser_official_stage2_pilot_scene_split_v2.json - M2 H1 scene-split v2 上的官方 B0/V 三轮重训契约，保持模型预算不变并扩大无泄漏行人 holdout
 README.md - InterFuser 上游安装、数据生成、训练与评测说明
 requirements.txt - 上游 Python 依赖基线；实际实验以固定 conda 环境为准
 setup_carla.sh - 上游 CARLA 安装脚本；当前服务器实际运行 CARLA 0.9.16

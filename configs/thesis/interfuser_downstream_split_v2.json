@@ -1,0 +1,52 @@
+{
+  "schema_version": 2,
+  "status": "frozen",
+  "protocol_document": "docs/interfuser_downstream_scene_split_v2_protocol.md",
+  "dataset_root": "/data1/shijj/interfuser_data",
+  "dataset_index": "/data1/shijj/interfuser_data/dataset_index.txt",
+  "dataset_index_sha256": "56c83f46a1010ee43021bbc2f97cafde9b3c2771522088ae938a2df2ea477ff1",
+  "semantic_split_manifest": "results/thesis_m1/semantic_split_v1_town_route_seed20260723_20260723T020939Z.json",
+  "semantic_split_manifest_sha256": "81d9403a5ecd39fb5c4cf7ac8ffd3c79505a9583d683a960cf5a02b6da1fe8f2",
+  "split_unit": "town_route",
+  "expansion_policy": {
+    "frozen_validation_route_groups": "validation",
+    "frozen_test_route_groups": "test",
+    "frozen_train_route_groups": "train",
+    "unassigned_pedestrian_route_groups": "deterministic_stratified_holdout_then_train",
+    "remaining_unassigned_route_groups": "train"
+  },
+  "scene_stratification": {
+    "selection_method": "seeded_town_coverage_balanced_frames_v1",
+    "selection_seed": 20260816,
+    "pedestrian_measurement_field": "is_pedestrian_present",
+    "required_navigation_fields": [
+      "command",
+      "x_command",
+      "y_command",
+      "future_waypoints",
+      "theta"
+    ],
+    "expected_scene_totals": {
+      "effective_frames": 181152,
+      "dropped_frames": 6143,
+      "pedestrian_frames": 10988,
+      "pedestrian_sequences": 675,
+      "pedestrian_route_groups": 61
+    },
+    "target_pedestrian_route_groups": {
+      "train": 45,
+      "validation": 8,
+      "test": 8
+    },
+    "required_pedestrian_towns_per_holdout": [
+      "Town01",
+      "Town03",
+      "Town04",
+      "Town05"
+    ],
+    "minimum_pedestrian_frames_per_holdout": 1000,
+    "minimum_pedestrian_sequences_per_holdout": 60,
+    "minimum_pedestrian_weathers_per_holdout": 12,
+    "maximum_holdout_pedestrian_frame_ratio": 1.5
+  }
+}

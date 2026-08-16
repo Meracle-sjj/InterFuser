@@ -20,6 +20,8 @@
 
 唯一共同变化是 B0/V 同时改用 scene-split v2：train/validation 有效帧从 `171,256/4,389` 变为 `165,264/7,437`，validation 行人覆盖从 1 个 Town+route 组、84 帧变为 8 个组、1,131 帧。该变化服务于 H1 可检验性，不构成新的模型变量。
 
+资源准入沿用 `shared_capacity`，按上一轮16.3 GiB实测峰值把GPU1最小空闲量设为20,000 MiB；该门槛只决定是否启动，不进入训练参数，B0/V共享同一容量和外部进程环境。
+
 ## 2. 旧 checkpoint 失效边界
 
 Stage 2 v1 的 B0/V 已在 v2 新增 holdout route group 上训练过，不能在新 validation/test 上报告无泄漏结果。v2 必须从同一官方初始化重新训练；不得加载 v1 best/last checkpoint 续训。
@@ -29,7 +31,7 @@ Stage 2 v1 的 B0/V 已在 v2 新增 holdout route group 上训练过，不能�
 - scene-split v2 manifest `valid=true`；三个 index 哈希、有效帧与 loader 实测一致；
 - validation/test 行人路线均为 8 组，覆盖 Town01/03/04/05，semantic-train overlap 为零；
 - B0/V 配置除 initial checkpoint 外完全相同；
-- Git worktree 干净，GPU1 至少 24,000 MiB 空闲。
+- Git worktree 干净，GPU1 至少 20,000 MiB 空闲。
 
 ## 4. 结果判读
 

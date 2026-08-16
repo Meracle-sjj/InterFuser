@@ -54,7 +54,7 @@
     "master_port": 29671,
     "timeout_seconds_per_variant": 10800,
     "gpu_resource_policy": "shared_capacity",
-    "gpu_minimum_free_memory_mb": 24000,
+    "gpu_minimum_free_memory_mb": 20000,
     "log_interval": 50,
     "require_clean_git": true
   },

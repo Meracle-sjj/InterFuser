@@ -20,6 +20,7 @@ CLAUDE.md: 实验事实记录模块地图，约束摘要只能引用已完成 ru
 2026-08-17-m2-negative-transfer-repair-probes.md: M2 H1 负迁移修复总账，固化两轮插值失败、B0锚定近门槛、L2-SP无效、BN缓冲根因与冻结BN候选精确超限0.00577个百分点的停止结论。
 2026-08-17-m2-calibration-diagnostic-v1.md: M2 H1 纯测量校准诊断记录，Q1排序改善与Q2阈值偏移均成立但v5门禁判定不变，附runner层落盘实现偏差说明。
 2026-08-17-m2-distill-probe-v1.md: M2 H1 v7 B0 教师特征蒸馏终局记录，固化语义门禁4/4、scene 保持三项全过、行人核心 2/5 发丝级失败、蒸馏后阈值漂移消隐，及按 v7 协议 §3 关闭视觉修复路线的裁决。
+2026-08-17-m2-linear-stitch-diagnostic-v1.md: M2 H1 v8a 线性缝合诊断，固化双臂逐 stage 误差消减率、v7 残差非线性的主臂 R=0.0108<0.5 判定，及 v8c 降级、v8b 功能蒸馏优先的方向取舍。
 2026-07-23-m1-semantic-split-and-alignment.md: M1 数据 v1 冻结记录，固化 Town+route 无泄漏划分、三组类别覆盖、内容哈希与九类 RGB/mask 人工对齐结论。
 2026-07-23-m2-semantic-smoke-v1.md: M2 首次语义预训练 smoke，记录 deterministic CUDA NLL 失败前序、修复后的有效训练/验证、checkpoint 与同构骨干迁移证据。
 2026-07-23-m2-semantic-learning-curve-v1.md: M2 三点数据量 pilot，固化嵌套 25%/50%/100% train、完整 validation、逐类指标、产物哈希与优化/数据边界结论。

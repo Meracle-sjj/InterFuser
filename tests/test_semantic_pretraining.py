@@ -325,6 +325,11 @@ class SemanticPretrainingTests(unittest.TestCase):
                     "backbone_warmup_epochs": 1,
                     "gpu_resource_policy": "shared_capacity",
                     "gpu_minimum_free_memory_mb": 20000,
+                    "source_parameter_regularization": {
+                        "method": "l2_sp",
+                        "reference": "backbone_initialization",
+                        "coefficient": 1e-5,
+                    },
                 }
             )
             config_path.write_text(json.dumps(config), encoding="utf-8")
@@ -338,6 +343,10 @@ class SemanticPretrainingTests(unittest.TestCase):
         self.assertEqual(contract["training"]["backbone_learning_rate"], 1e-5)
         self.assertEqual(contract["training"]["backbone_warmup_epochs"], 1)
         self.assertEqual(contract["training"]["gpu_resource_policy"], "shared_capacity")
+        self.assertEqual(
+            contract["training"]["source_parameter_regularization"]["coefficient"],
+            1e-5,
+        )
 
     def test_loads_rgb_prefix_from_interfuser_checkpoint(self):
         source = resnet50d(

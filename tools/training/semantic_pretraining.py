@@ -299,6 +299,20 @@ def load_training_contract(config_path):
             raise TrainingContractError(
                 "backbone_warmup_epochs must be in [0, training.epochs)"
             )
+    regularization = training.get("source_parameter_regularization")
+    if regularization is not None:
+        if not isinstance(regularization, dict) or regularization.get("method") != "l2_sp":
+            raise TrainingContractError(
+                "source_parameter_regularization.method must be l2_sp"
+            )
+        _positive_number(
+            regularization.get("coefficient"),
+            "source_parameter_regularization.coefficient",
+        )
+        if regularization.get("reference") != "backbone_initialization":
+            raise TrainingContractError(
+                "L2-SP reference must be backbone_initialization"
+            )
     if training.get("ignore_index") != DEFAULT_IGNORE_INDEX:
         raise TrainingContractError(f"training.ignore_index must be {DEFAULT_IGNORE_INDEX}")
     for field in ("deterministic", "require_clean_git"):

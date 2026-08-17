@@ -117,6 +117,8 @@ def _run_epoch(
     class_names,
     optimizer=None,
     backbone_trainable=True,
+    l2_sp_reference=None,
+    l2_sp_coefficient=0.0,
 ):
     training = optimizer is not None
     model.train(training)
@@ -124,6 +126,8 @@ def _run_epoch(
         model.backbone.eval()
     metrics = ConfusionMetrics(len(class_names), criterion.ignore_index)
     total_loss = 0.0
+    total_task_loss = 0.0
+    total_l2_sp_penalty = 0.0
     sample_count = 0
     started = time.monotonic()
     for batch in loader:
@@ -133,12 +137,21 @@ def _run_epoch(
             optimizer.zero_grad(set_to_none=True)
         with torch.set_grad_enabled(training):
             logits = model(images)
-            loss = criterion(logits, labels)
+            task_loss = criterion(logits, labels)
+            l2_sp_penalty = torch.zeros((), device=device)
+            if training and l2_sp_reference is not None:
+                l2_sp_penalty = sum(
+                    (parameter - l2_sp_reference[name]).pow(2).sum()
+                    for name, parameter in model.backbone.named_parameters()
+                )
+            loss = task_loss + float(l2_sp_coefficient) * l2_sp_penalty
             if training:
                 loss.backward()
                 optimizer.step()
         batch_size = images.shape[0]
         total_loss += float(loss.detach().cpu().item()) * batch_size
+        total_task_loss += float(task_loss.detach().cpu().item()) * batch_size
+        total_l2_sp_penalty += float(l2_sp_penalty.detach().cpu().item()) * batch_size
         sample_count += batch_size
         metrics.update(logits, labels)
     if device.type == "cuda":
@@ -147,6 +160,11 @@ def _run_epoch(
     summary.update(
         {
             "loss": total_loss / sample_count,
+            "task_loss": total_task_loss / sample_count,
+            "l2_sp_penalty": total_l2_sp_penalty / sample_count,
+            "weighted_l2_sp_penalty": float(l2_sp_coefficient)
+            * total_l2_sp_penalty
+            / sample_count,
             "samples": sample_count,
             "batches": len(loader),
             "duration_seconds": round(time.monotonic() - started, 3),
@@ -271,6 +289,9 @@ def run_training(config_path, run_id, result_root, train_sample_limit=None):
         "loss": {
             "name": "cross_entropy",
             "class_weights": contract["training"].get("class_weights"),
+            "source_parameter_regularization": contract["training"].get(
+                "source_parameter_regularization"
+            ),
         },
         "optimization": {
             "head_learning_rate": contract["training"]["learning_rate"],
@@ -320,6 +341,15 @@ def run_training(config_path, run_id, result_root, train_sample_limit=None):
             class_weights=contract["training"].get("class_weights"),
         ).to(device)
         optimizer = _build_optimizer(model, contract["training"])
+        regularization = contract["training"].get("source_parameter_regularization")
+        l2_sp_reference = None
+        l2_sp_coefficient = 0.0
+        if regularization is not None:
+            l2_sp_reference = {
+                name: parameter.detach().clone()
+                for name, parameter in model.backbone.named_parameters()
+            }
+            l2_sp_coefficient = regularization["coefficient"]
         class_names = [
             item["name"] for item in contract["class_config_loaded"]["classes"]
         ]
@@ -341,6 +371,8 @@ def run_training(config_path, run_id, result_root, train_sample_limit=None):
                 class_names,
                 optimizer=optimizer,
                 backbone_trainable=backbone_trainable,
+                l2_sp_reference=l2_sp_reference,
+                l2_sp_coefficient=l2_sp_coefficient,
             )
             with torch.no_grad():
                 validation_metrics = _run_epoch(

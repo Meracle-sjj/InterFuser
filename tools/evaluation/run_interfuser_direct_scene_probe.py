@@ -235,6 +235,7 @@ def execute_direct_scene_probe(config_path):
     try:
         ensure_gpus_have_free_memory([gpu], runtime["gpu_minimum_free_memory_mb"])
         os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
+        monitor.start()
         evaluation_contract = copy.deepcopy(contract["scene_contract"])
         evaluation_contract["runtime"] = dict(runtime)
         evaluation_contract["resolved_variants"] = contract["resolved_variants"]

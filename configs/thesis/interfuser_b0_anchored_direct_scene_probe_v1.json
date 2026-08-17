@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "status": "frozen",
-  "run_id": "m2-interfuser-b0-anchored-direct-scene-probe-v1-20260817-v1",
+  "run_id": "m2-interfuser-b0-anchored-direct-scene-probe-v1-20260817-v2",
   "protocol_document": "docs/interfuser_negative_transfer_repair_protocol_v3.md",
   "source_scene_validation_config": {
     "path": "configs/thesis/interfuser_stage2_scene_validation_v1.json",

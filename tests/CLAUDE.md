@@ -23,7 +23,7 @@ test_route_progress_blocked.py: 验证 180 秒内不足 18 米的路线进度停
 test_render_traffic_element_overlays.py: 验证复核 overlay 的目标选择、颜色语义与 manifest 输出。
 test_run_thesis_baseline.py: 验证 D7 runner 的路线拆分、CARLA 原生 RPC 崩溃隔离、晚发 CARLA 退出分类、结果解析、独占/共享资源门禁、可配置显存释放等待和 pipeline-invalid 立即终止。
 test_semantic_split_and_review.py: 验证 M1 split 的 Town+route 原子性、三组核心类别覆盖、内容哈希、RGB/mask 尺寸门禁与人工复核证据渲染。
-test_semantic_pretraining.py: 验证 M2 配置哈希、smoke/pilot/optimization 数据边界、确定性样本、CARLA 标签映射、无权重/加权确定性损失、离线指标、ResNet50d 前向和骨干严格迁移兼容性。
+test_semantic_pretraining.py: 验证 M2 配置哈希、数据边界、确定性样本、CARLA 标签映射、加权损失、B0 RGB prefix加载、分阶段骨干日程、离线指标、ResNet50d前向和严格迁移兼容性。
 test_interfuser_downstream_indexes.py: 验证 v1 M1 holdout 全量投影、v2 行人真值分层扩充、semantic-train 隔离、确定性/census 门禁、索引哈希与 CarlaMVDetDataset 显式 index 选择。
 test_interfuser_visual_pair.py: 验证 B0/V 初始 checkpoint 仅改变 RGB 共享骨干 alias、非 RGB 状态哈希相同且全模型 strict load。
 test_interfuser_visual_swap_pair.py: 验证对照分支原样继承历史/官方底座、视觉分支仅替换 RGB alias、非 RGB 状态相同，并覆盖 checkpoint 架构别名与错误元数据拒绝。

@@ -1,7 +1,7 @@
 """
-[INPUT]: 依赖 tools.training.semantic_pretraining 的配置、数据集、模型、指标和骨干导出 API，并以临时 M1 split/RGB/mask 构造最小训练契约。
-[OUTPUT]: 提供 provenance 哈希门禁、确定性样本选择、CARLA 标签映射、无权重/加权损失、指标计算、ResNet50d 前向与 InterFuser 严格迁移兼容测试。
-[POS]: tests 的 M2 训练契约测试，阻止数据划分漂移、标签静默忽略、指标错误或不可迁移的视觉骨干进入真实训练。
+[INPUT]: 依赖 tools.training.semantic_pretraining 的配置、数据集、模型、指标和骨干导出 API，并以临时 M1 split/RGB/mask及InterFuser格式状态构造最小训练契约。
+[OUTPUT]: 提供 provenance 哈希门禁、确定性样本选择、CARLA 标签映射、无权重/加权损失、B0骨干源点/分阶段学习率、指标计算、ResNet50d 前向与严格迁移兼容测试。
+[POS]: tests 的 M2 训练契约测试，阻止数据划分漂移、标签静默忽略、错误骨干来源/优化日程、指标错误或不可迁移权重进入真实训练。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
@@ -26,7 +26,9 @@ from tools.training.semantic_pretraining import (
     make_backbone_export,
     resolve_train_sample_limit,
     validate_backbone_export,
+    _load_pretrained_backbone,
 )
+from timm.models.resnet import resnet50d
 
 
 def _write_json(path, value):
@@ -305,6 +307,60 @@ class SemanticPretrainingTests(unittest.TestCase):
 
             with self.assertRaisesRegex(TrainingContractError, "finite positive"):
                 load_training_contract(config_path)
+
+    def test_accepts_b0_checkpoint_and_staged_backbone_schedule(self):
+        with tempfile.TemporaryDirectory() as root:
+            config_path = self._fixture(root)
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["backbone"].update(
+                {
+                    "pretrained_checkpoint_format": "interfuser_checkpoint",
+                    "pretrained_state_prefix": "rgb_backbone.",
+                }
+            )
+            config["training"].update(
+                {"epochs": 5, "backbone_learning_rate": 1e-5, "backbone_warmup_epochs": 1}
+            )
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+
+            contract = load_training_contract(config_path)
+
+        self.assertEqual(
+            contract["backbone"]["pretrained_checkpoint_format"],
+            "interfuser_checkpoint",
+        )
+        self.assertEqual(contract["training"]["backbone_learning_rate"], 1e-5)
+        self.assertEqual(contract["training"]["backbone_warmup_epochs"], 1)
+
+    def test_loads_rgb_prefix_from_interfuser_checkpoint(self):
+        source = resnet50d(
+            pretrained=False, in_chans=3, features_only=True, out_indices=[1, 2, 3, 4]
+        )
+        target = resnet50d(
+            pretrained=False, in_chans=3, features_only=True, out_indices=[1, 2, 3, 4]
+        )
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "interfuser.pth"
+            torch.save(
+                {
+                    "state_dict": {
+                        f"rgb_backbone.{key}": value.detach().clone()
+                        for key, value in source.state_dict().items()
+                    }
+                },
+                path,
+            )
+            _load_pretrained_backbone(
+                target,
+                path,
+                {
+                    "pretrained_checkpoint_format": "interfuser_checkpoint",
+                    "pretrained_state_prefix": "rgb_backbone.",
+                },
+            )
+
+        for key, value in source.state_dict().items():
+            torch.testing.assert_close(value, target.state_dict()[key])
 
     def test_model_output_and_backbone_export_match_interfuser(self):
         with tempfile.TemporaryDirectory() as root:

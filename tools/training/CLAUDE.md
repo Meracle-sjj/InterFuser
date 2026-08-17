@@ -4,8 +4,8 @@
 ## 成员清单
 
 CLAUDE.md: M2 训练工具模块地图，约束数据、模型、运行编排和迁移导出共享同一版本化契约。
-semantic_pretraining.py: 提供 split 驱动的 RGB/语义数据集、CARLA 标签映射、同构 ResNet50d-FPN、可选显式类别权重的 strict-deterministic 交叉熵、混淆矩阵指标和骨干迁移校验。
-run_semantic_pretraining.py: 消费 M2 配置执行单机训练/验证，守卫 GPU 与 Git provenance，并原子固化 loss 配置、last/best checkpoint、最佳骨干导出和 run manifest。
+semantic_pretraining.py: 提供 split 驱动的 RGB/语义数据集、CARLA 标签映射、同构 ResNet50d-FPN、ImageNet/InterFuser B0骨干来源、分阶段低学习率契约、可选类别权重损失、混淆指标和严格迁移兼容性。
+run_semantic_pretraining.py: 消费 M2 配置执行单机训练/验证，守卫 GPU/Git provenance，支持冻结骨干BN的头部warmup与分层学习率，并原子固化 checkpoint、骨干导出和运行事实。
 evaluate_semantic_hazard_holdout.py: 将训练不可见的 route-group 行人危险 holdout 投影到冻结语义模型，对不同 checkpoint 输出同口径 mIoU、macro-F1 与逐类指标。
 summarize_semantic_hazard_holdout.py: 严格校验 baseline/augmented 专项样本、类别权重和真值边界相同后，归约全局与逐类配对差值。
 summarize_semantic_learning_curve.py: 验证 pilot run 的完整预算矩阵、嵌套 train 样本、相同完整 validation、provenance 与产物哈希，并确定性归约学习曲线。

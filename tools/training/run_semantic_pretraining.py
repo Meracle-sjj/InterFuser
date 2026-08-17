@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-[INPUT]: 依赖版本化 M2 配置、semantic_pretraining 领域 API、GPU owner 门禁、干净 Git 工作树、冻结 M1 数据与可选类别权重。
-[OUTPUT]: 对外提供 TrainingRunError、run_training 与 CLI，原子生成训练/验证指标、完整 checkpoint、可迁移骨干权重和 run manifest。
-[POS]: tools/training 的 M2 单机运行编排器；只协调资源、训练生命周期与 provenance，不定义标签语义或修改 InterFuser 推理代码。
+[INPUT]: 依赖版本化 M2 配置、semantic_pretraining 领域 API、GPU owner 门禁、干净 Git 工作树、冻结 M1 数据、可选类别权重与骨干warmup/分层学习率。
+[OUTPUT]: 对外提供 TrainingRunError、run_training 与 CLI，原子生成训练/验证指标、完整 checkpoint、可迁移骨干权重和包含骨干可训练状态的 run manifest。
+[POS]: tools/training 的 M2 单机运行编排器；协调资源、分阶段优化、训练生命周期与 provenance，不定义标签语义或修改 InterFuser 推理代码。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
@@ -108,9 +108,19 @@ def _cpu_model_state(model):
     }
 
 
-def _run_epoch(model, loader, criterion, device, class_names, optimizer=None):
+def _run_epoch(
+    model,
+    loader,
+    criterion,
+    device,
+    class_names,
+    optimizer=None,
+    backbone_trainable=True,
+):
     training = optimizer is not None
     model.train(training)
+    if training and not backbone_trainable:
+        model.backbone.eval()
     metrics = ConfusionMetrics(len(class_names), criterion.ignore_index)
     total_loss = 0.0
     sample_count = 0
@@ -142,6 +152,28 @@ def _run_epoch(model, loader, criterion, device, class_names, optimizer=None):
         }
     )
     return summary
+
+
+def _build_optimizer(model, training):
+    backbone_learning_rate = training.get("backbone_learning_rate")
+    if backbone_learning_rate is None:
+        return torch.optim.AdamW(
+            model.parameters(),
+            lr=training["learning_rate"],
+            weight_decay=training["weight_decay"],
+        )
+    backbone_parameters = list(model.backbone.parameters())
+    backbone_ids = {id(parameter) for parameter in backbone_parameters}
+    head_parameters = [
+        parameter for parameter in model.parameters() if id(parameter) not in backbone_ids
+    ]
+    return torch.optim.AdamW(
+        [
+            {"params": backbone_parameters, "lr": backbone_learning_rate},
+            {"params": head_parameters, "lr": training["learning_rate"]},
+        ],
+        weight_decay=training["weight_decay"],
+    )
 
 
 def _dependency_versions():
@@ -230,6 +262,15 @@ def run_training(config_path, run_id, result_root, train_sample_limit=None):
             "name": "cross_entropy",
             "class_weights": contract["training"].get("class_weights"),
         },
+        "optimization": {
+            "head_learning_rate": contract["training"]["learning_rate"],
+            "backbone_learning_rate": contract["training"].get(
+                "backbone_learning_rate", contract["training"]["learning_rate"]
+            ),
+            "backbone_warmup_epochs": contract["training"].get(
+                "backbone_warmup_epochs", 0
+            ),
+        },
         "pretrained_checkpoint_sha256": contract["backbone"][
             "pretrained_checkpoint_sha256"
         ],
@@ -265,11 +306,7 @@ def run_training(config_path, run_id, result_root, train_sample_limit=None):
             ignore_index=contract["training"]["ignore_index"],
             class_weights=contract["training"].get("class_weights"),
         ).to(device)
-        optimizer = torch.optim.AdamW(
-            model.parameters(),
-            lr=contract["training"]["learning_rate"],
-            weight_decay=contract["training"]["weight_decay"],
-        )
+        optimizer = _build_optimizer(model, contract["training"])
         class_names = [
             item["name"] for item in contract["class_config_loaded"]["classes"]
         ]
@@ -278,6 +315,11 @@ def run_training(config_path, run_id, result_root, train_sample_limit=None):
         best_validation_miou = float("-inf")
         best_model_state = None
         for epoch_index in range(contract["training"]["epochs"]):
+            backbone_trainable = epoch_index >= contract["training"].get(
+                "backbone_warmup_epochs", 0
+            )
+            for parameter in model.backbone.parameters():
+                parameter.requires_grad_(backbone_trainable)
             train_metrics = _run_epoch(
                 model,
                 train_loader,
@@ -285,6 +327,7 @@ def run_training(config_path, run_id, result_root, train_sample_limit=None):
                 device,
                 class_names,
                 optimizer=optimizer,
+                backbone_trainable=backbone_trainable,
             )
             with torch.no_grad():
                 validation_metrics = _run_epoch(
@@ -296,6 +339,10 @@ def run_training(config_path, run_id, result_root, train_sample_limit=None):
                 )
             epoch_record = {
                 "epoch": epoch_index + 1,
+                "backbone_trainable": backbone_trainable,
+                "optimizer_learning_rates": [
+                    float(group["lr"]) for group in optimizer.param_groups
+                ],
                 "train": train_metrics,
                 "validation": validation_metrics,
             }

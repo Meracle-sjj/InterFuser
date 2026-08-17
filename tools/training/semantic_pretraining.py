@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-[INPUT]: 依赖 M1 类别配置与 split manifest、原始三相机 RGB/语义帧、仓库内 timm ResNet50d、冻结的 ImageNet 权重与可选显式类别权重。
-[OUTPUT]: 对外提供 TrainingContractError、load_training_contract、resolve_train_sample_limit、SemanticFrameDataset、SemanticPretrainingModel、DeterministicCrossEntropyLoss、ConfusionMetrics 与骨干导出/迁移校验 API。
-[POS]: tools/training 的 M2 核心领域层，把冻结数据契约转换为可训练张量、同构视觉骨干和可比较离线指标；不负责 GPU 独占或运行目录生命周期。
+[INPUT]: 依赖 M1 类别配置与 split manifest、原始三相机 RGB/语义帧、仓库内 timm ResNet50d、冻结的 ImageNet或InterFuser B0骨干权重与可选显式类别权重。
+[OUTPUT]: 对外提供 TrainingContractError、load_training_contract、resolve_train_sample_limit、SemanticFrameDataset、SemanticPretrainingModel、DeterministicCrossEntropyLoss、ConfusionMetrics 与骨干导出/迁移校验 API，支持B0源点的分阶段低学习率适配契约。
+[POS]: tools/training 的 M2 核心领域层，把冻结数据契约转换为可训练张量、同构视觉骨干和可比较离线指标；只解析骨干来源与优化约束，不负责 GPU 独占或运行目录生命周期。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
@@ -138,6 +138,18 @@ def load_training_contract(config_path):
         backbone.get("pretrained_checkpoint_sha256"),
         "pretrained checkpoint",
     )
+    checkpoint_format = backbone.get("pretrained_checkpoint_format", "timm_state_dict")
+    if checkpoint_format not in {"timm_state_dict", "interfuser_checkpoint"}:
+        raise TrainingContractError("unsupported pretrained checkpoint format")
+    if checkpoint_format == "interfuser_checkpoint":
+        if backbone.get("pretrained_state_prefix") != "rgb_backbone.":
+            raise TrainingContractError(
+                "InterFuser checkpoint requires rgb_backbone. state prefix"
+            )
+    elif backbone.get("pretrained_state_prefix") is not None:
+        raise TrainingContractError(
+            "timm checkpoint must not define pretrained_state_prefix"
+        )
 
     model = raw.get("model")
     if not isinstance(model, dict):
@@ -251,6 +263,26 @@ def load_training_contract(config_path):
     _positive_number(
         training.get("weight_decay"), "training.weight_decay", allow_zero=True
     )
+    backbone_learning_rate = training.get("backbone_learning_rate")
+    backbone_warmup_epochs = training.get("backbone_warmup_epochs")
+    if (backbone_learning_rate is None) != (backbone_warmup_epochs is None):
+        raise TrainingContractError(
+            "backbone_learning_rate and backbone_warmup_epochs must be configured together"
+        )
+    if backbone_learning_rate is not None:
+        _positive_number(backbone_learning_rate, "training.backbone_learning_rate")
+        if backbone_learning_rate > training["learning_rate"]:
+            raise TrainingContractError(
+                "backbone learning rate must not exceed the head learning rate"
+            )
+        if (
+            not isinstance(backbone_warmup_epochs, int)
+            or isinstance(backbone_warmup_epochs, bool)
+            or not 0 <= backbone_warmup_epochs < training["epochs"]
+        ):
+            raise TrainingContractError(
+                "backbone_warmup_epochs must be in [0, training.epochs)"
+            )
     if training.get("ignore_index") != DEFAULT_IGNORE_INDEX:
         raise TrainingContractError(f"training.ignore_index must be {DEFAULT_IGNORE_INDEX}")
     for field in ("deterministic", "require_clean_git"):
@@ -417,8 +449,29 @@ class SemanticFrameDataset(Dataset):
         return {"image": image_tensor, "label": label_tensor, "key": record["key"]}
 
 
-def _load_pretrained_backbone(backbone, checkpoint_path):
-    state = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+def _load_pretrained_backbone(backbone, checkpoint_path, backbone_contract=None):
+    backbone_contract = backbone_contract or {}
+    checkpoint_format = backbone_contract.get(
+        "pretrained_checkpoint_format", "timm_state_dict"
+    )
+    payload = torch.load(
+        checkpoint_path,
+        map_location="cpu",
+        weights_only=checkpoint_format == "timm_state_dict",
+    )
+    if checkpoint_format == "interfuser_checkpoint":
+        if not isinstance(payload, dict) or not isinstance(payload.get("state_dict"), dict):
+            raise TrainingContractError("InterFuser checkpoint has no state_dict")
+        prefix = backbone_contract["pretrained_state_prefix"]
+        state = OrderedDict(
+            (key[len(prefix) :], value)
+            for key, value in payload["state_dict"].items()
+            if key.startswith(prefix)
+        )
+        if not state:
+            raise TrainingContractError("InterFuser checkpoint has no RGB backbone state")
+    else:
+        state = payload
     if not isinstance(state, dict):
         raise TrainingContractError("pretrained checkpoint must contain a state dict")
     filtered = OrderedDict(
@@ -444,7 +497,9 @@ class SemanticPretrainingModel(nn.Module):
             features_only=True,
             out_indices=feature_indices,
         )
-        _load_pretrained_backbone(self.backbone, contract["pretrained_path"])
+        _load_pretrained_backbone(
+            self.backbone, contract["pretrained_path"], contract["backbone"]
+        )
         channels = self.backbone.feature_info.channels()
         decoder_channels = contract["model"]["decoder_channels"]
         self.lateral = nn.ModuleList(

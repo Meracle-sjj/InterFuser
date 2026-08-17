@@ -12,6 +12,7 @@ semantic_pretraining_pilot_v1.json: M2 数据量学习曲线配置，固定嵌�
 semantic_pretraining_optimization_probe_v1.json: M2 优化充分性诊断配置，固定 100% train、完整 validation、5 epoch 无类别权重预算和 best-mIoU checkpoint 选择。
 semantic_pretraining_class_weight_probe_v1.json: M2 类别失衡诊断配置，仅在同一五轮全量预算中加入由无权重 train 像素支持派生的 inverse-sqrt 显式权重。
 semantic_pretraining_pedestrian_hazard_probe_v1.json: M2 行人危险数据扩充 probe，保持原 validation、五轮预算与 inverse-sqrt 权重，唯一增加经碰撞真值审计的 train sequence。
+semantic_pretraining_b0_anchored_staged_probe_v1.json: M2 H1 负迁移修复语义probe，从官方B0 RGB初始化，先冻结骨干一轮，再以10倍低学习率在同一普通+危险数据和类别权重上适配。
 interfuser_downstream_split_v1.json: M2 H1 下游划分配置，将 M1 冻结 Town+route holdout 扩展到全量 dataset_index，未见 route group 仅进 train。
 interfuser_downstream_split_v2.json: M2 H1 行人分层下游配置，锁定 M1 已分配 route group，只从语义预训练未使用组确定性补足 train/validation/test=`45/8/8` 行人路线覆盖。
 interfuser_visual_initialization_v1.json: M2 H1 初始化配置，冻结 InterFuser/ResNet 代码哈希、ImageNet B0 与交通域 V 权重及唯一 RGB 变量不变式。

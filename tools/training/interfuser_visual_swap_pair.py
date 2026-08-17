@@ -157,16 +157,36 @@ def load_visual_swap_contract(path):
         "visual_rgb_initialization",
     )
 
-    expected_invariant = {
+    required_invariant = {
         "only_changed_module": "rgb_backbone",
         "expected_full_model_tensors": 1132,
         "expected_unique_rgb_tensors": 330,
-        "expected_full_model_rgb_alias_tensors": 660,
         "strict_base_checkpoint_load": True,
         "strict_full_model_checkpoint_load": True,
     }
-    if raw.get("pair_invariant") != expected_invariant:
+    pair_invariant = raw.get("pair_invariant")
+    if not isinstance(pair_invariant, dict) or any(
+        pair_invariant.get(key) != value for key, value in required_invariant.items()
+    ):
         raise VisualSwapError("pair_invariant differs from the frozen contract")
+    allowed_invariant_keys = set(required_invariant) | {
+        "expected_full_model_rgb_alias_tensors",
+        "expected_changed_unique_rgb_tensors",
+    }
+    if set(pair_invariant) - allowed_invariant_keys:
+        raise VisualSwapError("pair_invariant contains unsupported fields")
+    expected_changed_unique = pair_invariant.get(
+        "expected_changed_unique_rgb_tensors",
+        pair_invariant["expected_unique_rgb_tensors"],
+    )
+    if (
+        not isinstance(expected_changed_unique, int)
+        or isinstance(expected_changed_unique, bool)
+        or not 0 < expected_changed_unique <= pair_invariant["expected_unique_rgb_tensors"]
+        or pair_invariant.get("expected_full_model_rgb_alias_tensors")
+        != expected_changed_unique * len(RGB_PREFIXES)
+    ):
+        raise VisualSwapError("changed RGB alias invariant is inconsistent")
     if not isinstance(raw.get("seed"), int) or isinstance(raw.get("seed"), bool):
         raise VisualSwapError("seed must be an integer")
     if not isinstance(raw.get("require_clean_git"), bool):
@@ -195,6 +215,10 @@ def load_visual_swap_contract(path):
         raise VisualSwapError("result_root escapes the repository") from exc
 
     normalized = dict(raw)
+    normalized["pair_invariant"] = {
+        **pair_invariant,
+        "expected_changed_unique_rgb_tensors": expected_changed_unique,
+    }
     normalized.update(
         {
             "path": path,
@@ -346,8 +370,11 @@ def prepare_visual_swap_pair(config_path, run_id, result_root=None):
         changed_unique = sum(
             not torch.equal(m0_rgb[key], visual_rgb[key]) for key in m0_rgb
         )
-        if changed_unique != expected_rgb:
-            raise VisualSwapError("visual swap did not replace every RGB tensor")
+        expected_changed_unique = contract["pair_invariant"].get(
+            "expected_changed_unique_rgb_tensors", expected_rgb
+        )
+        if changed_unique != expected_changed_unique:
+            raise VisualSwapError("visual swap changed an unexpected RGB tensor count")
 
         non_rgb = lambda key: not key.startswith(RGB_PREFIXES)
         m0_ft_non_rgb_hash = state_dict_sha256(m0_ft_state, include=non_rgb)

@@ -33,7 +33,8 @@
     "only_changed_module": "rgb_backbone",
     "expected_full_model_tensors": 1132,
     "expected_unique_rgb_tensors": 330,
-    "expected_full_model_rgb_alias_tensors": 660,
+    "expected_changed_unique_rgb_tensors": 165,
+    "expected_full_model_rgb_alias_tensors": 330,
     "strict_base_checkpoint_load": true,
     "strict_full_model_checkpoint_load": true
   },

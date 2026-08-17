@@ -18,6 +18,7 @@ CLAUDE.md: 实验事实记录模块地图，约束摘要只能引用已完成 ru
 2026-08-16-m2-downstream-scene-split-v2.md: M2 H1 行人 holdout 测量修复记录，固化全库 census、45/8/8 分层、semantic-train 零泄漏、loader/哈希确定性与三相机连续帧可信度。
 2026-08-17-m2-stage2-scene-validation-v1.md: M2 H1 scene-split v2 的 validation-only 分层评估，固化整体2/5、行人条件4/5、非行人0/5、路线异质性、连续帧退化与 test 保持冻结结论。
 2026-08-17-m2-negative-transfer-repair-probes.md: M2 H1 负迁移修复总账，固化两轮插值失败、B0锚定近门槛、L2-SP无效、BN缓冲根因与冻结BN候选精确超限0.00577个百分点的停止结论。
+2026-08-17-m2-calibration-diagnostic-v1.md: M2 H1 纯测量校准诊断记录，Q1排序改善与Q2阈值偏移均成立但v5门禁判定不变，附runner层落盘实现偏差说明。
 2026-07-23-m1-semantic-split-and-alignment.md: M1 数据 v1 冻结记录，固化 Town+route 无泄漏划分、三组类别覆盖、内容哈希与九类 RGB/mask 人工对齐结论。
 2026-07-23-m2-semantic-smoke-v1.md: M2 首次语义预训练 smoke，记录 deterministic CUDA NLL 失败前序、修复后的有效训练/验证、checkpoint 与同构骨干迁移证据。
 2026-07-23-m2-semantic-learning-curve-v1.md: M2 三点数据量 pilot，固化嵌套 25%/50%/100% train、完整 validation、逐类指标、产物哈希与优化/数据边界结论。

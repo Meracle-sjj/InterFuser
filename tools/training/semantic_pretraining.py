@@ -38,6 +38,7 @@ from tools.data.audit_semantic_pretraining_data import (  # noqa: E402
 TRAINING_CONFIG_SCHEMA_VERSION = 1
 BACKBONE_EXPORT_SCHEMA_VERSION = 1
 DEFAULT_IGNORE_INDEX = 255
+GPU_RESOURCE_POLICIES = ("exclusive", "shared_capacity")
 
 
 class TrainingContractError(ValueError):
@@ -248,7 +249,7 @@ def load_training_contract(config_path):
     training = raw.get("training")
     if not isinstance(training, dict):
         raise TrainingContractError("training must be an object")
-    for field in ("epochs", "batch_size", "gpu_busy_memory_threshold_mb"):
+    for field in ("epochs", "batch_size"):
         _positive_int(training.get(field), f"training.{field}")
     for field in ("num_workers", "physical_gpu_index"):
         value = training.get(field)
@@ -259,6 +260,21 @@ def load_training_contract(config_path):
         raise TrainingContractError("training.seed must be an integer")
     if training.get("optimizer") != "adamw":
         raise TrainingContractError("training.optimizer must be adamw")
+    gpu_resource_policy = training.get("gpu_resource_policy", "exclusive")
+    if gpu_resource_policy not in GPU_RESOURCE_POLICIES:
+        raise TrainingContractError(
+            f"training.gpu_resource_policy must be one of {GPU_RESOURCE_POLICIES}"
+        )
+    if gpu_resource_policy == "shared_capacity":
+        _positive_int(
+            training.get("gpu_minimum_free_memory_mb"),
+            "training.gpu_minimum_free_memory_mb",
+        )
+    else:
+        _positive_int(
+            training.get("gpu_busy_memory_threshold_mb"),
+            "training.gpu_busy_memory_threshold_mb",
+        )
     _positive_number(training.get("learning_rate"), "training.learning_rate")
     _positive_number(
         training.get("weight_decay"), "training.weight_decay", allow_zero=True

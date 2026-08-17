@@ -33,6 +33,7 @@ from torch.utils.data import DataLoader  # noqa: E402
 from tools.evaluation.runtime_resources import (  # noqa: E402
     RunnerError,
     ensure_gpus_available,
+    ensure_gpus_have_free_memory,
 )
 from tools.training.semantic_pretraining import (  # noqa: E402
     ConfusionMetrics,
@@ -219,11 +220,20 @@ def _prepare_run(config_path, run_id, result_root):
         raise TrainingRunError(
             f"CUDA_VISIBLE_DEVICES must be {physical_gpu}, got {visible!r}"
         )
+    gpu_resource_policy = contract["training"].get(
+        "gpu_resource_policy", "exclusive"
+    )
     try:
-        gpu_usage = ensure_gpus_available(
-            [physical_gpu],
-            contract["training"]["gpu_busy_memory_threshold_mb"],
-        )
+        if gpu_resource_policy == "shared_capacity":
+            gpu_usage = ensure_gpus_have_free_memory(
+                [physical_gpu],
+                contract["training"]["gpu_minimum_free_memory_mb"],
+            )
+        else:
+            gpu_usage = ensure_gpus_available(
+                [physical_gpu],
+                contract["training"]["gpu_busy_memory_threshold_mb"],
+            )
     except RunnerError as exc:
         raise TrainingRunError(str(exc)) from exc
     if not torch.cuda.is_available():
@@ -279,6 +289,9 @@ def run_training(config_path, run_id, result_root, train_sample_limit=None):
             "physical_gpu_index": contract["training"]["physical_gpu_index"],
             "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
             "gpu_memory_before_mb": gpu_usage,
+            "gpu_resource_policy": contract["training"].get(
+                "gpu_resource_policy", "exclusive"
+            ),
         },
         "errors": [],
     }

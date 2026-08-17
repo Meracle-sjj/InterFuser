@@ -26,6 +26,7 @@
 - epoch 1：冻结RGB骨干及其BatchNorm统计，只训练一次性FPN语义头；
 - epoch 2–5：解冻骨干，头部学习率 `1e-4`，骨干学习率 `1e-5`；
 - best checkpoint仍只由冻结语义validation mIoU选择。
+- GPU1使用与Stage 2相同的共享容量语义，启动时至少保留20,000 MiB空闲；外部低占用context不被清理。
 
 该probe同时改变了初始化源点和适配日程，现阶段只判断可行性。若成功，后续必须以消融区分B0初始化与warmup/低学习率的贡献。
 

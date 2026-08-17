@@ -319,7 +319,13 @@ class SemanticPretrainingTests(unittest.TestCase):
                 }
             )
             config["training"].update(
-                {"epochs": 5, "backbone_learning_rate": 1e-5, "backbone_warmup_epochs": 1}
+                {
+                    "epochs": 5,
+                    "backbone_learning_rate": 1e-5,
+                    "backbone_warmup_epochs": 1,
+                    "gpu_resource_policy": "shared_capacity",
+                    "gpu_minimum_free_memory_mb": 20000,
+                }
             )
             config_path.write_text(json.dumps(config), encoding="utf-8")
 
@@ -331,6 +337,7 @@ class SemanticPretrainingTests(unittest.TestCase):
         )
         self.assertEqual(contract["training"]["backbone_learning_rate"], 1e-5)
         self.assertEqual(contract["training"]["backbone_warmup_epochs"], 1)
+        self.assertEqual(contract["training"]["gpu_resource_policy"], "shared_capacity")
 
     def test_loads_rgb_prefix_from_interfuser_checkpoint(self):
         source = resnet50d(

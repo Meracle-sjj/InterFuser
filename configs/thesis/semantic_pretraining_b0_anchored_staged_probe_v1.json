@@ -76,7 +76,8 @@
       "support_pixels": [81328888, 43601572, 11468219, 1930351, 2023191, 20100, 57845, 251712, 13891, 5032231]
     },
     "physical_gpu_index": 1,
-    "gpu_busy_memory_threshold_mb": 1024,
+    "gpu_resource_policy": "shared_capacity",
+    "gpu_minimum_free_memory_mb": 20000,
     "require_clean_git": true
   }
 }

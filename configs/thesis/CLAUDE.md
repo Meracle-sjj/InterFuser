@@ -24,6 +24,7 @@ interfuser_official_stage2_pilot_v1.json: M2 H1 官方 B0/V 的 Stage 2 三轮�
 interfuser_official_stage2_pilot_scene_split_v2.json: M2 H1 scene-split v2 配对重训配置，继承官方 B0/V 三轮预算并绑定 45/8/8 行人路线分层后的 train/validation 索引。
 interfuser_stage2_scene_validation_v1.json: M2 H1 scene-split v2 的 validation-only 配对评估配置，哈希绑定 B0/V best checkpoint 并冻结整体、行人条件、非行人与8个路线组的任务/连续帧指标。
 interfuser_weight_interpolation_probe_v1.json: M2 H1 负迁移修复配置，在最终B0/V之间冻结0.25/0.5/0.75全浮点权重插值，并联合约束行人收益、非行人保持、整体traffic和连续帧稳定性。
+interfuser_weight_interpolation_rgb_probe_v2.json: M2 H1 v1失败后的RGB隔离插值配置，保留B0 Transformer/LiDAR/任务头，仅在两个RGB alias上复用相同alpha与保持门禁。
 interfuser_visual_swap_route39_m0_ft_v1.json: M2 H1 M0-FT 零微调诊断配置，绑定固定底座保真 checkpoint，并只准运行 route39 seed0 的闭环包装校准。
 interfuser_visual_swap_route39_m0_v_v1.json: M2 H1 M0-V 零微调诊断配置，绑定语义 RGB 替换 checkpoint，以 route39 seed0 检测旧融合头的特征分布失配。
 interfuser_visual_swap_m0_ft_gpu1_v1.json: M2 H1 M0-FT D7-minus-route39 GPU1 首次资源迁移配置，将 agent/CARLA 固定到同一 RTX 5090，并显式准入 1 GiB 门槛内的既有 compute context。

@@ -59,6 +59,7 @@ PEDESTRIAN_TEMPORAL_METRICS = (
     "traffic_delta_residual_mae",
     "waypoint_delta_residual_ade",
 )
+RGB_PREFIXES = ("rgb_backbone.", "rgb_patch_embed.backbone.")
 
 
 class InterpolationProbeError(RuntimeError):
@@ -184,8 +185,11 @@ def load_interpolation_probe_contract(config_path, repo_root=REPO_ROOT):
             raise InterpolationProbeError(f"source {name} checkpoint differs")
 
     interpolation = raw.get("interpolation") or {}
-    if interpolation.get("scope") != "all_floating_tensors":
-        raise InterpolationProbeError("interpolation scope must be all_floating_tensors")
+    if interpolation.get("scope") not in {
+        "all_floating_tensors",
+        "rgb_floating_tensors",
+    }:
+        raise InterpolationProbeError("interpolation scope is unsupported")
     if interpolation.get("nonfloating_policy") != "copy_b0":
         raise InterpolationProbeError("nonfloating policy must be copy_b0")
     alphas = interpolation.get("alphas")
@@ -238,15 +242,20 @@ def load_interpolation_probe_contract(config_path, repo_root=REPO_ROOT):
     }
 
 
-def interpolate_state_dicts(b0_state, v_state, alpha):
-    """Linearly interpolate floating tensors and retain B0 discrete buffers."""
+def interpolate_state_dicts(
+    b0_state, v_state, alpha, scope="all_floating_tensors"
+):
+    """Interpolate selected floating tensors and retain the remaining B0 state."""
     alpha = float(alpha)
     if not 0.0 < alpha < 1.0:
         raise InterpolationProbeError("alpha must be in (0, 1)")
+    if scope not in {"all_floating_tensors", "rgb_floating_tensors"}:
+        raise InterpolationProbeError("interpolation scope is unsupported")
     if tuple(b0_state) != tuple(v_state):
         raise InterpolationProbeError("source state schemas have different keys/order")
     output = {}
     floating = 0
+    floating_copied = 0
     nonfloating = 0
     nonfloating_differences = 0
     for name, b0_tensor in b0_state.items():
@@ -258,15 +267,20 @@ def interpolate_state_dicts(b0_state, v_state, alpha):
             or b0_tensor.dtype != v_tensor.dtype
         ):
             raise InterpolationProbeError(f"source tensor schema differs: {name}")
-        if b0_tensor.is_floating_point() or b0_tensor.is_complex():
+        selected = scope == "all_floating_tensors" or name.startswith(RGB_PREFIXES)
+        if (b0_tensor.is_floating_point() or b0_tensor.is_complex()) and selected:
             output[name] = torch.lerp(b0_tensor, v_tensor, alpha).detach().clone()
             floating += 1
+        elif b0_tensor.is_floating_point() or b0_tensor.is_complex():
+            output[name] = b0_tensor.detach().clone()
+            floating_copied += 1
         else:
             output[name] = b0_tensor.detach().clone()
             nonfloating += 1
             nonfloating_differences += int(not torch.equal(b0_tensor, v_tensor))
     return output, {
         "floating_tensors_interpolated": floating,
+        "floating_tensors_copied_from_b0": floating_copied,
         "nonfloating_tensors_copied_from_b0": nonfloating,
         "nonfloating_source_differences": nonfloating_differences,
     }
@@ -390,7 +404,10 @@ def execute_interpolation_probe(config_path):
         for alpha in contract["interpolation"]["alphas"]:
             name = _candidate_name(alpha)
             state, tensor_summary = interpolate_state_dicts(
-                b0_payload["state_dict"], v_payload["state_dict"], alpha
+                b0_payload["state_dict"],
+                v_payload["state_dict"],
+                alpha,
+                contract["interpolation"]["scope"],
             )
             checkpoint_path = run_dir / f"{name}.pth"
             torch.save(
@@ -399,7 +416,7 @@ def execute_interpolation_probe(config_path):
                     "state_dict": state,
                     "interpolation": {
                         "alpha": float(alpha),
-                        "scope": "all_floating_tensors",
+                        "scope": contract["interpolation"]["scope"],
                         "nonfloating_policy": "copy_b0",
                     },
                 },

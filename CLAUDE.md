@@ -52,6 +52,7 @@ configs/thesis/interfuser_official_stage2_pilot_v1.json - M2 H1 官方底座 Sta
 configs/thesis/interfuser_official_stage2_pilot_scene_split_v2.json - M2 H1 scene-split v2 上的官方 B0/V 三轮重训契约，保持模型预算不变并扩大无泄漏行人 holdout
 configs/thesis/interfuser_stage2_scene_validation_v1.json - M2 H1 Stage 2 best checkpoint 的 validation-only 整体/行人/路线组配对离线评估契约
 configs/thesis/interfuser_weight_interpolation_probe_v1.json - M2 H1 B0/V 最终权重插值的负迁移修复筛选与普通场景保持门禁契约
+configs/thesis/interfuser_weight_interpolation_rgb_probe_v2.json - M2 H1 仅插值RGB并保留B0下游全状态的负迁移定位契约
 README.md - InterFuser 上游安装、数据生成、训练与评测说明
 requirements.txt - 上游 Python 依赖基线；实际实验以固定 conda 环境为准
 setup_carla.sh - 上游 CARLA 安装脚本；当前服务器实际运行 CARLA 0.9.16

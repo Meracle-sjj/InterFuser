@@ -43,6 +43,25 @@ class WeightInterpolationProbeTests(unittest.TestCase):
                 0.5,
             )
 
+    def test_rgb_scope_preserves_non_rgb_floating_tensors(self):
+        b0 = {
+            "rgb_backbone.weight": torch.tensor([0.0]),
+            "transformer.weight": torch.tensor([3.0]),
+        }
+        v = {
+            "rgb_backbone.weight": torch.tensor([2.0]),
+            "transformer.weight": torch.tensor([9.0]),
+        }
+
+        state, summary = interpolate_state_dicts(
+            b0, v, 0.5, scope="rgb_floating_tensors"
+        )
+
+        self.assertEqual(state["rgb_backbone.weight"].item(), 1.0)
+        self.assertEqual(state["transformer.weight"].item(), 3.0)
+        self.assertEqual(summary["floating_tensors_interpolated"], 1)
+        self.assertEqual(summary["floating_tensors_copied_from_b0"], 1)
+
     @staticmethod
     def _metric(relative, higher=True, improved=True):
         return {

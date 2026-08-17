@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "run_id": "m2-interfuser-weight-interpolation-rgb-probe-v2-20260817-v1",
+  "protocol_document": "docs/interfuser_negative_transfer_repair_protocol_v2.md",
+  "source_scene_validation_config": {
+    "path": "configs/thesis/interfuser_stage2_scene_validation_v1.json",
+    "sha256": "eb21807427f8bb0770ce4ec420ffc9a02f18a598d985eaa964136dab020f631b"
+  },
+  "source_scene_validation_manifest": {
+    "path": "results/thesis_m2/m2-interfuser-stage2-scene-validation-v1-seed20260814-20260817-v1/scene_validation_manifest.json",
+    "sha256": "f9477b9c17425032108854e48efc0c6f0d1b793ee42d723265c9ae63a0ca7bd7"
+  },
+  "interpolation": {
+    "scope": "rgb_floating_tensors",
+    "nonfloating_policy": "copy_b0",
+    "alphas": [0.25, 0.5, 0.75]
+  },
+  "acceptance": {
+    "minimum_pedestrian_core_improvements": 3,
+    "maximum_nonpedestrian_core_degradation_percent": 3.0,
+    "maximum_overall_traffic_degradation_percent": 3.0,
+    "maximum_pedestrian_temporal_degradation_percent": 10.0
+  },
+  "runtime": {
+    "seed": 20260814,
+    "gpu": 1,
+    "batch_size": 32,
+    "workers": 8,
+    "log_interval_batches": 50,
+    "gpu_minimum_free_memory_mb": 20000,
+    "require_clean_git": true
+  },
+  "result_root": "results/thesis_m2"
+}

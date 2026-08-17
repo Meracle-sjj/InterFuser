@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "protocol_document": "docs/interfuser_negative_transfer_repair_protocol_v7.md",
+  "seed": 20260723,
+  "base_checkpoint": {
+    "source": "interfuser_author_release",
+    "path": "/home/shijj/interfuser/leaderboard/team_code/interfuser.pth.tar",
+    "sha256": "39548dcfa56cdc06b8ccc52d7f6187a7d70ef36b05b7027db4d64a57ac3e30b2",
+    "architecture": "interfuser_baseline",
+    "checkpoint_architecture": "mvt_baseline",
+    "epoch": 34
+  },
+  "visual_rgb_initialization": {
+    "source": "m2_semantic_b0_anchored_distill_probe_v1_best_epoch3",
+    "checkpoint": "results/thesis_m2/m2-semantic-b0-anchored-distill-probe-v1-seed20260723-20260817-v1/backbone_resnet50d.pth",
+    "checkpoint_sha256": "0a07f28483cbaf9a7a898ac7ce806e5460d14e7a038662fba88a2f2480652dc4",
+    "architecture": "resnet50d",
+    "source_training_config_sha256": "4fe98d16824c21a71f609a80ae264f4c36c7fdc1cf526d0e94b579e040237e9e"
+  },
+  "model": {
+    "name": "interfuser_baseline",
+    "model_definition": "interfuser/timm/models/interfuser.py",
+    "model_definition_sha256": "4f62c726147ee51c198e88195e1ec7048e711e9124f2d1e42f936b7a96049c4f",
+    "resnet_definition": "interfuser/timm/models/resnet.py",
+    "resnet_definition_sha256": "017a732757bdad519d17860475cd83def1eb7dcfbf5baba160409439c06ef93a"
+  },
+  "variant_names": {
+    "base": "official_b0",
+    "visual": "official_b0_b0anchored_distill_v"
+  },
+  "pair_invariant": {
+    "only_changed_module": "rgb_backbone",
+    "expected_full_model_tensors": 1132,
+    "expected_unique_rgb_tensors": 330,
+    "expected_changed_unique_rgb_tensors": 165,
+    "expected_full_model_rgb_alias_tensors": 330,
+    "strict_base_checkpoint_load": true,
+    "strict_full_model_checkpoint_load": true
+  },
+  "require_clean_git": true,
+  "result_root": "results/thesis_m2"
+}

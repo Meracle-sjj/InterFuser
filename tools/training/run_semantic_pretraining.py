@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-[INPUT]: 依赖版本化 M2 配置、semantic_pretraining 领域 API、GPU owner 门禁、干净 Git 工作树、冻结 M1 数据、可选类别权重与骨干warmup/分层学习率。
-[OUTPUT]: 对外提供 TrainingRunError、run_training 与 CLI，原子生成训练/验证指标、完整 checkpoint、可迁移骨干权重和包含骨干可训练状态的 run manifest。
+[INPUT]: 依赖版本化 M2 配置、semantic_pretraining 领域 API、GPU owner 门禁、干净 Git 工作树、冻结 M1 数据、可选类别权重、骨干warmup/分层学习率与可选B0教师特征蒸馏。
+[OUTPUT]: 对外提供 TrainingRunError、run_training 与 CLI，原子生成训练/验证指标、完整 checkpoint、可迁移骨干权重和包含骨干可训练状态与蒸馏惩罚的 run manifest。
 [POS]: tools/training 的 M2 单机运行编排器；协调资源、分阶段优化、训练生命周期与 provenance，不定义标签语义或修改 InterFuser 推理代码。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -43,6 +43,8 @@ from tools.training.semantic_pretraining import (  # noqa: E402
     TrainingContractError,
     load_training_contract,
     make_backbone_export,
+    make_frozen_feature_teacher,
+    normalized_feature_l2,
     resolve_train_sample_limit,
     set_reproducible_seed,
     sha256_file,
@@ -120,6 +122,8 @@ def _run_epoch(
     freeze_backbone_batch_norm_stats=False,
     l2_sp_reference=None,
     l2_sp_coefficient=0.0,
+    feature_teacher=None,
+    distill_coefficient=0.0,
 ):
     training = optimizer is not None
     model.train(training)
@@ -131,6 +135,7 @@ def _run_epoch(
     total_loss = 0.0
     total_task_loss = 0.0
     total_l2_sp_penalty = 0.0
+    total_distill_penalty = 0.0
     sample_count = 0
     started = time.monotonic()
     for batch in loader:
@@ -139,7 +144,10 @@ def _run_epoch(
         if training:
             optimizer.zero_grad(set_to_none=True)
         with torch.set_grad_enabled(training):
-            logits = model(images)
+            if training and feature_teacher is not None:
+                logits, student_features = model.forward_with_features(images)
+            else:
+                logits = model(images)
             task_loss = criterion(logits, labels)
             l2_sp_penalty = torch.zeros((), device=device)
             if training and l2_sp_reference is not None:
@@ -147,7 +155,18 @@ def _run_epoch(
                     (parameter - l2_sp_reference[name]).pow(2).sum()
                     for name, parameter in model.backbone.named_parameters()
                 )
-            loss = task_loss + float(l2_sp_coefficient) * l2_sp_penalty
+            distill_penalty = torch.zeros((), device=device)
+            if training and feature_teacher is not None:
+                with torch.no_grad():
+                    teacher_features = feature_teacher(images)
+                distill_penalty = normalized_feature_l2(
+                    student_features, teacher_features
+                )
+            loss = (
+                task_loss
+                + float(l2_sp_coefficient) * l2_sp_penalty
+                + float(distill_coefficient) * distill_penalty
+            )
             if training:
                 loss.backward()
                 optimizer.step()
@@ -155,6 +174,9 @@ def _run_epoch(
         total_loss += float(loss.detach().cpu().item()) * batch_size
         total_task_loss += float(task_loss.detach().cpu().item()) * batch_size
         total_l2_sp_penalty += float(l2_sp_penalty.detach().cpu().item()) * batch_size
+        total_distill_penalty += float(
+            distill_penalty.detach().cpu().item()
+        ) * batch_size
         sample_count += batch_size
         metrics.update(logits, labels)
     if device.type == "cuda":
@@ -167,6 +189,10 @@ def _run_epoch(
             "l2_sp_penalty": total_l2_sp_penalty / sample_count,
             "weighted_l2_sp_penalty": float(l2_sp_coefficient)
             * total_l2_sp_penalty
+            / sample_count,
+            "feature_distillation_penalty": total_distill_penalty / sample_count,
+            "weighted_feature_distillation_penalty": float(distill_coefficient)
+            * total_distill_penalty
             / sample_count,
             "samples": sample_count,
             "batches": len(loader),
@@ -295,6 +321,7 @@ def run_training(config_path, run_id, result_root, train_sample_limit=None):
             "source_parameter_regularization": contract["training"].get(
                 "source_parameter_regularization"
             ),
+            "feature_distillation": contract["training"].get("feature_distillation"),
         },
         "optimization": {
             "head_learning_rate": contract["training"]["learning_rate"],
@@ -356,6 +383,12 @@ def run_training(config_path, run_id, result_root, train_sample_limit=None):
                 for name, parameter in model.backbone.named_parameters()
             }
             l2_sp_coefficient = regularization["coefficient"]
+        distillation = contract["training"].get("feature_distillation")
+        feature_teacher = None
+        distill_coefficient = 0.0
+        if distillation is not None:
+            feature_teacher = make_frozen_feature_teacher(contract).to(device)
+            distill_coefficient = float(distillation["coefficient"])
         class_names = [
             item["name"] for item in contract["class_config_loaded"]["classes"]
         ]
@@ -382,6 +415,8 @@ def run_training(config_path, run_id, result_root, train_sample_limit=None):
                 ),
                 l2_sp_reference=l2_sp_reference,
                 l2_sp_coefficient=l2_sp_coefficient,
+                feature_teacher=feature_teacher,
+                distill_coefficient=distill_coefficient,
             )
             with torch.no_grad():
                 validation_metrics = _run_epoch(

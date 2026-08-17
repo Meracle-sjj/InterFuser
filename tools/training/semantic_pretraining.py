@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 [INPUT]: 依赖 M1 类别配置与 split manifest、原始三相机 RGB/语义帧、仓库内 timm ResNet50d、冻结的 ImageNet或InterFuser B0骨干权重与可选显式类别权重。
-[OUTPUT]: 对外提供 TrainingContractError、load_training_contract、resolve_train_sample_limit、SemanticFrameDataset、SemanticPretrainingModel、DeterministicCrossEntropyLoss、ConfusionMetrics 与骨干导出/迁移校验 API，支持B0源点的分阶段低学习率适配契约。
+[OUTPUT]: 对外提供 TrainingContractError、load_training_contract、resolve_train_sample_limit、SemanticFrameDataset、SemanticPretrainingModel、DeterministicCrossEntropyLoss、ConfusionMetrics、normalized_feature_l2、make_frozen_feature_teacher 与骨干导出/迁移校验 API，支持B0源点的分阶段低学习率适配契约与可选B0教师特征蒸馏。
 [POS]: tools/training 的 M2 核心领域层，把冻结数据契约转换为可训练张量、同构视觉骨干和可比较离线指标；只解析骨干来源与优化约束，不负责 GPU 独占或运行目录生命周期。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -313,6 +313,35 @@ def load_training_contract(config_path):
             raise TrainingContractError(
                 "L2-SP reference must be backbone_initialization"
             )
+    distillation = training.get("feature_distillation")
+    if distillation is not None:
+        if regularization is not None:
+            raise TrainingContractError(
+                "feature_distillation and source_parameter_regularization are mutually exclusive"
+            )
+        if not isinstance(distillation, dict):
+            raise TrainingContractError("training.feature_distillation must be an object")
+        _positive_number(
+            distillation.get("coefficient"), "feature_distillation.coefficient"
+        )
+        if distillation.get("teacher_checkpoint_format") != "interfuser_checkpoint":
+            raise TrainingContractError(
+                "feature_distillation teacher must use interfuser_checkpoint format"
+            )
+        if distillation.get("teacher_state_prefix") != "rgb_backbone.":
+            raise TrainingContractError(
+                "feature_distillation teacher requires rgb_backbone. state prefix"
+            )
+        teacher_path = _resolve_repo_path(
+            distillation.get("teacher_checkpoint"), "feature_distillation.teacher_checkpoint"
+        )
+        _validate_sha(
+            teacher_path,
+            distillation.get("teacher_checkpoint_sha256"),
+            "feature distillation teacher checkpoint",
+        )
+    else:
+        teacher_path = None
     if training.get("ignore_index") != DEFAULT_IGNORE_INDEX:
         raise TrainingContractError(f"training.ignore_index must be {DEFAULT_IGNORE_INDEX}")
     for field in ("deterministic", "require_clean_git"):
@@ -349,6 +378,7 @@ def load_training_contract(config_path):
     normalized["split_path"] = split_path
     normalized["split_manifest_loaded"] = split_manifest
     normalized["pretrained_path"] = pretrained_path
+    normalized["feature_distillation_teacher_path"] = teacher_path
     return normalized
 
 
@@ -562,18 +592,17 @@ class SemanticPretrainingModel(nn.Module):
             nn.Conv2d(decoder_channels, contract["model"]["num_classes"], kernel_size=1),
         )
 
-    def forward(self, images):
-        input_size = images.shape[-2:]
-        features = self.backbone(images)
-        pyramids = [None] * len(features)
+    def forward_features(self, features):
+        """Run the disposable FPN head on precomputed backbone stage features."""
+        input_pyramids = [None] * len(features)
         top = self.lateral[-1](features[-1])
-        pyramids[-1] = self.smooth[-1](top)
+        input_pyramids[-1] = self.smooth[-1](top)
         for index in range(len(features) - 2, -1, -1):
             top = self.lateral[index](features[index]) + F.interpolate(
                 top, size=features[index].shape[-2:], mode="bilinear", align_corners=False
             )
-            pyramids[index] = self.smooth[index](top)
-        target_size = pyramids[0].shape[-2:]
+            input_pyramids[index] = self.smooth[index](top)
+        target_size = input_pyramids[0].shape[-2:]
         fused = torch.cat(
             [
                 level
@@ -581,12 +610,67 @@ class SemanticPretrainingModel(nn.Module):
                 else F.interpolate(
                     level, size=target_size, mode="bilinear", align_corners=False
                 )
-                for level in pyramids
+                for level in input_pyramids
             ],
             dim=1,
         )
-        logits = self.fuse(fused)
+        return self.fuse(fused)
+
+    def forward(self, images):
+        input_size = images.shape[-2:]
+        logits = self.forward_features(self.backbone(images))
         return F.interpolate(logits, size=input_size, mode="bilinear", align_corners=False)
+
+    def forward_with_features(self, images):
+        """Return input-size logits alongside backbone stage features for distillation."""
+        features = self.backbone(images)
+        logits = self.forward_features(features)
+        return (
+            F.interpolate(
+                logits, size=images.shape[-2:], mode="bilinear", align_corners=False
+            ),
+            features,
+        )
+
+
+def normalized_feature_l2(student_features, teacher_features):
+    """Sum per-stage ||fs−ft||²/||ft||² so feature scale never becomes a tuning knob."""
+    if len(student_features) != len(teacher_features) or not student_features:
+        raise TrainingContractError("feature distillation requires aligned stage lists")
+    penalty = torch.zeros((), device=student_features[0].device)
+    for student, teacher in zip(student_features, teacher_features):
+        if student.shape != teacher.shape:
+            raise TrainingContractError("student/teacher feature shapes differ")
+        denominator = teacher.pow(2).sum().clamp_min(1e-12)
+        penalty = penalty + (student - teacher).pow(2).sum() / denominator
+    return penalty
+
+
+def make_frozen_feature_teacher(contract):
+    """Build the frozen B0 ResNet50d feature teacher from the hash-bound checkpoint."""
+    distillation = contract["training"].get("feature_distillation")
+    if distillation is None:
+        raise TrainingContractError("feature distillation is not configured")
+    teacher = resnet50d(
+        pretrained=False,
+        in_chans=3,
+        features_only=True,
+        out_indices=contract["backbone"]["feature_indices"],
+    )
+    _load_pretrained_backbone(
+        teacher,
+        contract["feature_distillation_teacher_path"],
+        {
+            "pretrained_checkpoint_format": distillation["teacher_checkpoint_format"],
+            "pretrained_state_prefix": distillation["teacher_state_prefix"],
+        },
+    )
+    teacher.eval()
+    teacher.requires_grad_(False)
+    for parameter in teacher.parameters():
+        if parameter.requires_grad:
+            raise TrainingContractError("feature teacher must remain fully frozen")
+    return teacher
 
 
 class DeterministicCrossEntropyLoss(nn.Module):

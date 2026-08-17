@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "status": "diagnostic",
+  "protocol_document": "docs/interfuser_negative_transfer_repair_protocol_v8.md",
+  "training_config": "configs/thesis/semantic_pretraining_b0_anchored_distill_probe_v1.json",
+  "training_config_sha256": "4fe98d16824c21a71f609a80ae264f4c36c7fdc1cf526d0e94b579e040237e9e",
+  "split_seed": 20260817,
+  "ridge_scale": 0.001,
+  "decision_threshold": 0.5,
+  "primary_arm": "v7_distilled",
+  "arms": {
+    "v7_distilled": {
+      "checkpoint": "results/thesis_m2/m2-semantic-b0-anchored-distill-probe-v1-seed20260723-20260817-v1/backbone_resnet50d.pth",
+      "checkpoint_sha256": "0a07f28483cbaf9a7a898ac7ce806e5460d14e7a038662fba88a2f2480652dc4"
+    },
+    "v5_frozen_bn": {
+      "checkpoint": "results/thesis_m2/m2-semantic-b0-anchored-frozen-bn-probe-v3-seed20260723-20260817-v1/backbone_resnet50d.pth",
+      "checkpoint_sha256": "4031ce76e2f01db93dcd87718a69241ae84efbbf5cb5df51dc0e0a8b9ab2996b"
+    }
+  },
+  "physical_gpu_index": 1,
+  "gpu_minimum_free_memory_mb": 20000
+}

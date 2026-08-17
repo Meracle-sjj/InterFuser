@@ -20,5 +20,6 @@ run_interfuser_scene_validation.py: 对 scene-split v2 的 Stage 2 B0/V best che
 run_interfuser_weight_interpolation_probe.py: 在 Stage 2 最终B0/V之间生成全浮点权重插值候选，以行人收益、非行人/整体保持和连续帧稳定性联合门禁筛选负迁移修复，不读取test。
 run_interfuser_direct_scene_probe.py: 对同一官方B0底座与直接RGB替换候选执行零微调validation分层配对，以普通保持和行人收益门禁决定是否准入Stage 2，不读取test；score_dump=true 时把两变体分数落盘到 run 目录 scores/ 供 v6 校准诊断离线消费。
 calibrate_interfuser_occupancy_threshold.py: 消费 direct scene probe 的分数落盘，按冻结种子蛇形划分 route group 并对称搜索非行人 occupied IoU 最优阈值，只产出描述性证据、不产出 Stage 2 准入。
+linear_stitch_diagnostic.py: v8a 线性可缝合性诊断，在语义 validation 冻结划分上累积岭回归充分统计量，对照 B0 教师与 v7/v5 学生骨干逐 stage 特征，产出误差消减率 manifest 与缝合可行性判定，不产出 Stage 2 准入。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

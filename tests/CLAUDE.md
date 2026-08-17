@@ -30,6 +30,7 @@ test_interfuser_visual_swap_pair.py: 验证对照分支原样继承历史/官方
 test_interfuser_train_validation.py: 验证单 GPU validation 对全部 loss/accuracy 张量执行恒等归约，阻止仅分布式路径赋值造成 epoch 后崩溃。
 test_calibration_diagnostic.py: 验证 v6 校准诊断的 route group 蛇形划分确定性与约束、阈值搜索与冻结指标口径一致、分数落盘回读与端到端合成诊断。
 test_feature_distillation.py: 验证 v7 蒸馏契约校验、教师冻结与权重一致、归一化L2数学、训练步蒸馏接线及关闭时与原配方等价。
+test_linear_stitch_diagnostic.py: 验证 v8a 确定性划分、岭回归闭式解、误差消减与余弦口径、预注册判定规则及缺失臂报错。
 test_run_interfuser_visual_pair.py: 验证 B0/V 训练命令共享预算与坐标、单 GPU pilot 表达、smoke 索引确定性、formal test index 强制绑定、args 差异归一和 summary 完整性门禁。
 test_interfuser_offline_metrics.py: 验证冻结 test 的 traffic AP/AUC/IoU、逐类混淆、正确 stop-sign head、waypoint 精确分母、目标条件连续帧残差与缺失支持门禁。
 test_run_interfuser_visual_test.py: 验证预注册 test 契约、索引哈希/相邻帧计数漂移、formal 未完成阻断、B0/V checkpoint/schema 准入和固定方向差值。

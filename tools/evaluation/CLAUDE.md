@@ -17,5 +17,6 @@ interfuser_offline_metrics.py: 纯归约 InterFuser traffic grid、逐时域 way
 run_interfuser_visual_test.py: 在 formal B0/V 完整有效后，以严格索引的隔离单 GPU worker 串行 strict-load 两个 best checkpoint，守卫 test 帧/相邻帧计数、哈希和资源并生成配对指标差值 manifest。
 run_interfuser_modality_ablation.py: 在完整 validation 上固定官方 B0/B0-V 与非目标输入，以显式 LiDAR y 轴契约和密度门槛守卫有效对照，再成对归约 RGB 均值填充、模糊、样本错配及 LiDAR 清空的任务退化与输出敏感度。
 run_interfuser_scene_validation.py: 对 scene-split v2 的 Stage 2 B0/V best checkpoint 只读 validation，一次前向归约整体、行人条件、非行人、8个行人路线组及连续帧配对差，并显式拒绝 test index。
+run_interfuser_weight_interpolation_probe.py: 在 Stage 2 最终B0/V之间生成全浮点权重插值候选，以行人收益、非行人/整体保持和连续帧稳定性联合门禁筛选负迁移修复，不读取test。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

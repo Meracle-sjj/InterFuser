@@ -33,6 +33,7 @@ test_interfuser_offline_metrics.py: 验证冻结 test 的 traffic AP/AUC/IoU、�
 test_run_interfuser_visual_test.py: 验证预注册 test 契约、索引哈希/相邻帧计数漂移、formal 未完成阻断、B0/V checkpoint/schema 准入和固定方向差值。
 test_run_interfuser_modality_ablation.py: 验证 CARLA 采集版本的 LiDAR y 轴、compass 导航 frame、缺失导航帧过滤、RGB/LiDAR 单变量干预与 weak/material 阈值方向。
 test_run_interfuser_scene_validation.py: 验证 Stage 2 scene validation 的 completed pair/validation/checkpoint 哈希绑定、test index 拒绝与行人核心指标多数票方向。
+test_run_interfuser_weight_interpolation_probe.py: 验证浮点权重插值、B0离散缓冲保留、schema漂移拒绝及行人收益与普通/整体/时序保持联合门禁。
 test_summarize_semantic_learning_curve.py: 验证 M2 pilot 汇总拒绝缺失预算、非嵌套 train、validation 漂移、pipeline/provenance 异常与产物哈希漂移。
 test_summarize_thesis_baseline.py: 验证 M0 汇总器拒绝缺失、重复、基础设施失败和未授权输入漂移，区分评测语义与共享 GPU 资源策略后确定性归约完整路线×种子矩阵。
 test_summarize_interfuser_visual_d7.py: 验证 M2 H1 汇总器要求 B0/V 各 21/21、固定 attempt 顺序、checkpoint-only 差异，并按冻结 offline+D7 规则生成结论。

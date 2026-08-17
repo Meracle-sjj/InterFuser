@@ -16,8 +16,9 @@ build_interfuser_visual_d7_configs.py: 消费预注册 build 契约，只在 for
 interfuser_offline_metrics.py: 纯归约 InterFuser traffic grid、逐时域 waypoint、junction、red-light 与 stop-sign 输出，并以目标条件相邻帧残差度量预测稳定性。
 run_interfuser_visual_test.py: 在 formal B0/V 完整有效后，以严格索引的隔离单 GPU worker 串行 strict-load 两个 best checkpoint，守卫 test 帧/相邻帧计数、哈希和资源并生成配对指标差值 manifest。
 run_interfuser_modality_ablation.py: 在完整 validation 上固定官方 B0/B0-V 与非目标输入，以显式 LiDAR y 轴契约和密度门槛守卫有效对照，再成对归约 RGB 均值填充、模糊、样本错配及 LiDAR 清空的任务退化与输出敏感度。
-run_interfuser_scene_validation.py: 对 scene-split v2 的 Stage 2 B0/V best checkpoint 只读 validation，一次前向归约整体、行人条件、非行人、8个行人路线组及连续帧配对差，并显式拒绝 test index。
+run_interfuser_scene_validation.py: 对 scene-split v2 的 Stage 2 B0/V best checkpoint 只读 validation，一次前向归约整体、行人条件、非行人、8个行人路线组及连续帧配对差，并显式拒绝 test index；score_dump_dir 存在时附带确定性 per-sample 交通分数/真值落盘。
 run_interfuser_weight_interpolation_probe.py: 在 Stage 2 最终B0/V之间生成全浮点权重插值候选，以行人收益、非行人/整体保持和连续帧稳定性联合门禁筛选负迁移修复，不读取test。
-run_interfuser_direct_scene_probe.py: 对同一官方B0底座与直接RGB替换候选执行零微调validation分层配对，以普通保持和行人收益门禁决定是否准入Stage 2，不读取test。
+run_interfuser_direct_scene_probe.py: 对同一官方B0底座与直接RGB替换候选执行零微调validation分层配对，以普通保持和行人收益门禁决定是否准入Stage 2，不读取test；score_dump=true 时把两变体分数落盘到 run 目录 scores/ 供 v6 校准诊断离线消费。
+calibrate_interfuser_occupancy_threshold.py: 消费 direct scene probe 的分数落盘，按冻结种子蛇形划分 route group 并对称搜索非行人 occupied IoU 最优阈值，只产出描述性证据、不产出 Stage 2 准入。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

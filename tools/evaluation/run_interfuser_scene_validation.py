@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 [INPUT]: 依赖完成且可比的 Stage 2 B0/V manifest、scene-split v2 validation index、逐帧行人真值、best checkpoint 与纯离线指标归约器。
-[OUTPUT]: 对外提供 SceneValidationError、load_scene_validation_contract、build_metric_comparison、execute_scene_validation 与 CLI，生成整体/行人条件/非行人/行人 route-group 的配对 validation 指标。
+[OUTPUT]: 对外提供 SceneValidationError、load_scene_validation_contract、build_metric_comparison、execute_scene_validation 与 CLI，生成整体/行人条件/非行人/行人 route-group 的配对 validation 指标；score_dump_dir 存在时附带 per-sample 交通分数/真值落盘。
 [POS]: tools/evaluation 的 M2 H1 validation 门禁；只读已解封 validation，不接触冻结 test，并为是否继续视觉路线提供任务级证据。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -411,6 +411,39 @@ def _finalize_accumulators(task, temporal, route_task):
     }
 
 
+def _write_score_dump(dump_dir, variant, dump, expected_samples):
+    """Persist per-sample traffic scores/targets with deterministic file bytes."""
+    import numpy as np
+
+    dump_dir = Path(dump_dir)
+    dump_dir.mkdir(parents=True, exist_ok=True)
+    scores = np.concatenate(dump["scores"]).astype(np.float32, copy=False)
+    targets = np.concatenate(dump["targets"]).astype(np.int8, copy=False)
+    metadata = dump["metadata"]
+    if scores.shape != targets.shape or scores.ndim != 2 or scores.shape[1] != 400:
+        raise SceneValidationError("score dump arrays have unexpected shapes")
+    if len(metadata) != scores.shape[0] or scores.shape[0] != expected_samples:
+        raise SceneValidationError("score dump sample count differs from evaluation")
+    artifacts = {}
+    for name, array in (("traffic_scores", scores), ("traffic_targets", targets)):
+        path = dump_dir / f"{variant}_{name}.npy"
+        with path.open("wb") as stream:
+            np.save(stream, array)
+        artifacts[name] = {
+            "path": str(path),
+            "sha256": sha256_file(path),
+            "shape": [int(dim) for dim in array.shape],
+        }
+    meta_path = dump_dir / f"{variant}_meta.json"
+    _write_json(meta_path, {"samples": metadata})
+    artifacts["meta"] = {
+        "path": str(meta_path),
+        "sha256": sha256_file(meta_path),
+        "samples": len(metadata),
+    }
+    return artifacts
+
+
 def _evaluate_variant(contract, variant):
     import numpy as np
     import torch
@@ -474,11 +507,42 @@ def _evaluate_variant(contract, variant):
         group: InterfuserMetricAccumulator(*metric_args)
         for group in dataset.pedestrian_route_groups
     }
+    score_dump_dir = contract.get("score_dump_dir")
+    dump = None
+    if score_dump_dir is not None:
+        dump = {"scores": [], "targets": [], "metadata": []}
     started = time.monotonic()
     with torch.inference_mode():
         for batch_index, (inputs, targets, metadata) in enumerate(loader):
             inputs = {name: value.cuda(non_blocking=False) for name, value in inputs.items()}
             outputs = model(inputs)
+            if dump is not None:
+                dump["scores"].append(
+                    outputs[0][:, :, 0].detach().cpu().numpy().astype(np.float32)
+                )
+                dump["targets"].append(
+                    (
+                        targets[4][:, :, 0]
+                        >= contract["metrics"]["traffic_positive_target_threshold"]
+                    )
+                    .cpu()
+                    .numpy()
+                    .astype(np.int8)
+                )
+                dump["metadata"].extend(
+                    {
+                        "sequence_id": sequence,
+                        "frame_id": int(frame),
+                        "pedestrian": bool(flag),
+                        "route_group": group,
+                    }
+                    for sequence, frame, flag, group in zip(
+                        metadata["sequence_id"],
+                        metadata["frame_id"].tolist(),
+                        metadata["pedestrian"].tolist(),
+                        metadata["route_group"],
+                    )
+                )
             task["overall"].update(outputs, targets)
             temporal["overall"].update(
                 outputs, targets, metadata["sequence_id"], metadata["frame_id"]
@@ -543,6 +607,10 @@ def _evaluate_variant(contract, variant):
         "metrics": metrics,
         "pedestrian_route_group_metrics": route_metrics,
     }
+    if dump is not None:
+        result["score_dump"] = _write_score_dump(
+            score_dump_dir, variant, dump, metrics["overall"]["samples"]
+        )
     del model, loader, dataset, base
     torch.cuda.empty_cache()
     return result

@@ -1,0 +1,43 @@
+{
+ "schema_version": 1,
+ "status": "frozen",
+ "run_id": "m2-interfuser-b0-anchored-frozen-bn-calibration-probe-v1-20260817-v1",
+ "protocol_document": "docs/interfuser_negative_transfer_repair_protocol_v6.md",
+ "score_dump": true,
+ "source_scene_validation_config": {
+  "path": "configs/thesis/interfuser_stage2_scene_validation_v1.json",
+  "sha256": "eb21807427f8bb0770ce4ec420ffc9a02f18a598d985eaa964136dab020f631b"
+ },
+ "initialization_manifest": {
+  "path": "results/thesis_m2/m2-interfuser-official-b0-anchored-frozen-bn-swap-init-v2-20260817-v2/initialization_manifest.json",
+  "sha256": "129f87fce0b1c70f3d967b77ab684b0af9f1d6544843958dce6c0bd283eb24d3"
+ },
+ "variants": {
+  "b0": {
+   "initialization_manifest_variant": "official_b0",
+   "checkpoint": "results/thesis_m2/m2-interfuser-official-b0-anchored-frozen-bn-swap-init-v2-20260817-v2/official_b0_initial_checkpoint.pth",
+   "checkpoint_sha256": "15d70aa489f33b84b8cad0988aa0b8f1787ee626069d8c95c3e9e518e781a0ce"
+  },
+  "candidate": {
+   "initialization_manifest_variant": "official_b0_b0anchored_frozen_bn_v",
+   "checkpoint": "results/thesis_m2/m2-interfuser-official-b0-anchored-frozen-bn-swap-init-v2-20260817-v2/official_b0_b0anchored_frozen_bn_v_initial_checkpoint.pth",
+   "checkpoint_sha256": "fc7a943f1b15f4173c79d3c090e64adfe7cd4161a1636471e90ff4d450ed8e2e"
+  }
+ },
+ "acceptance": {
+  "minimum_pedestrian_core_improvements": 3,
+  "maximum_nonpedestrian_core_degradation_percent": 3.0,
+  "maximum_overall_traffic_degradation_percent": 3.0,
+  "maximum_pedestrian_temporal_degradation_percent": 10.0
+ },
+ "runtime": {
+  "seed": 20260814,
+  "gpu": 1,
+  "batch_size": 32,
+  "workers": 8,
+  "log_interval_batches": 50,
+  "gpu_minimum_free_memory_mb": 20000,
+  "require_clean_git": true
+ },
+ "result_root": "results/thesis_m2"
+}

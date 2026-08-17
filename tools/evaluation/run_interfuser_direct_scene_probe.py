@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-[INPUT]: 依赖 validation-only scene contract、pipeline-valid 的B0/candidate初始化manifest、严格checkpoint哈希与冻结保持门禁。
-[OUTPUT]: 对外提供 DirectSceneProbeError、load_direct_scene_probe_contract、execute_direct_scene_probe 与 CLI，在相同validation上生成零微调B0/candidate整体/行人/非行人配对证据。
+[INPUT]: 依赖 validation-only scene contract、pipeline-valid 的B0/candidate初始化manifest、严格checkpoint哈希与冻结保持门禁；score_dump=true 时将 per-sample 交通分数落盘到 run 目录 scores/。
+[OUTPUT]: 对外提供 DirectSceneProbeError、load_direct_scene_probe_contract、execute_direct_scene_probe 与 CLI，在相同validation上生成零微调B0/candidate整体/行人/非行人配对证据与可选分数落盘。
 [POS]: tools/evaluation 的 M2 H1 修复候选回接门禁；不经过Stage 2即先判断新RGB骨干是否保留官方普通驾驶表征，显式拒绝test。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -179,6 +179,8 @@ def load_direct_scene_probe_contract(config_path, repo_root=REPO_ROOT):
     _positive_int(runtime.get("gpu_minimum_free_memory_mb"), "GPU free memory")
     if not isinstance(runtime.get("require_clean_git"), bool):
         raise DirectSceneProbeError("runtime.require_clean_git must be boolean")
+    if "score_dump" in raw and not isinstance(raw.get("score_dump"), bool):
+        raise DirectSceneProbeError("score_dump must be boolean when present")
     result_root = _resolve_path(repo_root, raw.get("result_root"), "result_root", False)
     try:
         result_root.relative_to(repo_root)
@@ -239,6 +241,8 @@ def execute_direct_scene_probe(config_path):
         evaluation_contract = copy.deepcopy(contract["scene_contract"])
         evaluation_contract["runtime"] = dict(runtime)
         evaluation_contract["resolved_variants"] = contract["resolved_variants"]
+        if contract.get("score_dump"):
+            evaluation_contract["score_dump_dir"] = str(run_dir / "scores")
         for variant in VARIANTS:
             result = _evaluate_variant(evaluation_contract, variant)
             manifest["variants"].append(result)

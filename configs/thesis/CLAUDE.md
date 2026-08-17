@@ -22,6 +22,7 @@ interfuser_official_modality_ablation_v1.json: M2 H1 官方底座模态依赖配
 interfuser_official_modality_ablation_v2.json: M2 H1 CARLA 0.9.16 LiDAR 坐标修正版模态配置，保持 v1 干预不变，显式取消重复 y 轴反号并以输入密度门槛阻止空 LiDAR 充当对照。
 interfuser_official_stage2_pilot_v1.json: M2 H1 官方 B0/V 的 Stage 2 三轮全模型协同适配配置，冻结 compass 导航 frame、LiDAR `+1`、缺失导航帧剔除和 GPU1 单卡全局 batch 32。
 interfuser_official_stage2_pilot_scene_split_v2.json: M2 H1 scene-split v2 配对重训配置，继承官方 B0/V 三轮预算并绑定 45/8/8 行人路线分层后的 train/validation 索引。
+interfuser_stage2_scene_validation_v1.json: M2 H1 scene-split v2 的 validation-only 配对评估配置，哈希绑定 B0/V best checkpoint 并冻结整体、行人条件、非行人与8个路线组的任务/连续帧指标。
 interfuser_visual_swap_route39_m0_ft_v1.json: M2 H1 M0-FT 零微调诊断配置，绑定固定底座保真 checkpoint，并只准运行 route39 seed0 的闭环包装校准。
 interfuser_visual_swap_route39_m0_v_v1.json: M2 H1 M0-V 零微调诊断配置，绑定语义 RGB 替换 checkpoint，以 route39 seed0 检测旧融合头的特征分布失配。
 interfuser_visual_swap_m0_ft_gpu1_v1.json: M2 H1 M0-FT D7-minus-route39 GPU1 首次资源迁移配置，将 agent/CARLA 固定到同一 RTX 5090，并显式准入 1 GiB 门槛内的既有 compute context。

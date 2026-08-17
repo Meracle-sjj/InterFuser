@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "run_id": "m2-interfuser-stage2-scene-validation-v1-seed20260814-20260817-v1",
+  "protocol_document": "docs/interfuser_official_stage2_protocol_v2.md",
+  "pair_run_manifest": {
+    "path": "results/thesis_m2/m2-interfuser-official-stage2-scene-split-v2-seed20260814-20260816-v1/run_manifest.json",
+    "sha256": "8783fd2851024c24def72949a5204bc8045d36115eca4b2f60b2ef748ce84cc4"
+  },
+  "pair_training_config": {
+    "path": "configs/thesis/interfuser_official_stage2_pilot_scene_split_v2.json",
+    "sha256": "fb92645d3f102979f7c74dec3543a88fdccdeed8d5fccc03464fff1bf6919eae"
+  },
+  "downstream_split_manifest": {
+    "path": "results/thesis_m2/interfuser_downstream_split_v2_scene_seed20260816_20260816-v1/split_manifest.json",
+    "sha256": "bdb1b02745c791ed2f1edc897505f1ec3f432271ad3edb9a18987610a1aef124"
+  },
+  "model": "interfuser_baseline",
+  "dataset": {
+    "root": "/data1/shijj/interfuser_data",
+    "validation_index": "results/thesis_m2/interfuser_downstream_split_v2_scene_seed20260816_20260816-v1/validation_dataset_index.txt",
+    "validation_index_sha256": "b4b5a62ac57a310c0d53aceadba53059eefce4b149fd47c30ae754b0694403d2",
+    "towns": [1, 3, 4, 5],
+    "weathers": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 20],
+    "lidar_y_axis_multiplier": 1.0,
+    "navigation_frame": "carla0916_compass",
+    "missing_navigation_policy": "drop"
+  },
+  "scene": {
+    "pedestrian_measurement_field": "is_pedestrian_present",
+    "effective_frames": 7437,
+    "pedestrian_frames": 1131,
+    "pedestrian_sequences": 80,
+    "pedestrian_route_groups": 8,
+    "temporal": {
+      "overall_adjacent_pairs": 7047,
+      "overall_sequences_with_pairs": 390,
+      "pedestrian_adjacent_pairs": 1048,
+      "pedestrian_sequences_with_pairs": 80
+    }
+  },
+  "variants": {
+    "b0": {
+      "checkpoint": "results/thesis_m2/m2-interfuser-official-stage2-scene-split-v2-seed20260814-20260816-v1/b0/output/20260816-124148-interfuser_baseline-224-b0-pilot/model_best.pth.tar",
+      "checkpoint_sha256": "d9966a337c52b1b3fc65396d34e7f89744cd533bab22608809732e32eb2d717b"
+    },
+    "v": {
+      "checkpoint": "results/thesis_m2/m2-interfuser-official-stage2-scene-split-v2-seed20260814-20260816-v1/v/output/20260816-132855-interfuser_baseline-224-v-pilot/model_best.pth.tar",
+      "checkpoint_sha256": "cb984aff127a8dc7b8e659b6a770abaca7dd5ece017fe65a45f4a71ddaf7d863"
+    }
+  },
+  "metrics": {
+    "traffic_positive_target_threshold": 0.01,
+    "traffic_prediction_threshold": 0.5,
+    "invalid_waypoint_threshold": 1000.0
+  },
+  "runtime": {
+    "seed": 20260814,
+    "gpu": 1,
+    "batch_size": 32,
+    "workers": 8,
+    "log_interval_batches": 50,
+    "gpu_minimum_free_memory_mb": 20000,
+    "require_clean_git": true
+  },
+  "result_root": "results/thesis_m2"
+}

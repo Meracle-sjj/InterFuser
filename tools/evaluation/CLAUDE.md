@@ -16,5 +16,6 @@ build_interfuser_visual_d7_configs.py: 消费预注册 build 契约，只在 for
 interfuser_offline_metrics.py: 纯归约 InterFuser traffic grid、逐时域 waypoint、junction、red-light 与 stop-sign 输出，并以目标条件相邻帧残差度量预测稳定性。
 run_interfuser_visual_test.py: 在 formal B0/V 完整有效后，以严格索引的隔离单 GPU worker 串行 strict-load 两个 best checkpoint，守卫 test 帧/相邻帧计数、哈希和资源并生成配对指标差值 manifest。
 run_interfuser_modality_ablation.py: 在完整 validation 上固定官方 B0/B0-V 与非目标输入，以显式 LiDAR y 轴契约和密度门槛守卫有效对照，再成对归约 RGB 均值填充、模糊、样本错配及 LiDAR 清空的任务退化与输出敏感度。
+run_interfuser_scene_validation.py: 对 scene-split v2 的 Stage 2 B0/V best checkpoint 只读 validation，一次前向归约整体、行人条件、非行人、8个行人路线组及连续帧配对差，并显式拒绝 test index。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

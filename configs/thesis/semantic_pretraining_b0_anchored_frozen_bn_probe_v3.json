@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "status": "optimization_probe",
+  "protocol_document": "docs/interfuser_negative_transfer_repair_protocol_v5.md",
+  "class_config": "configs/thesis/semantic_classes_v1.json",
+  "class_config_sha256": "796222592efb68407a32bfdf9a03907b4631cf3f30d0d6a81528010e50f0b612",
+  "split_manifest": "results/thesis_m1/semantic_split_pedestrian_hazard_augmented_v1_seed20260804.json",
+  "split_manifest_sha256": "ea4e5878bf9b8621d70881507ce44b3f4c25cece274d4580961e554e2e6de29b",
+  "backbone": {
+    "name": "resnet50d",
+    "feature_indices": [1, 2, 3, 4],
+    "pretrained_source": "interfuser_author_b0_rgb_backbone",
+    "pretrained_checkpoint": "results/thesis_m2/m2-interfuser-official-visual-swap-init-v1-seed20260723-20260814-v1/official_b0_initial_checkpoint.pth",
+    "pretrained_checkpoint_sha256": "15d70aa489f33b84b8cad0988aa0b8f1787ee626069d8c95c3e9e518e781a0ce",
+    "pretrained_checkpoint_format": "interfuser_checkpoint",
+    "pretrained_state_prefix": "rgb_backbone."
+  },
+  "model": {"num_classes": 10, "decoder_channels": 64, "dropout": 0.1},
+  "data": {
+    "cameras": ["front", "left", "right"],
+    "input_width": 160,
+    "input_height": 120,
+    "sample_seed": 20260723,
+    "max_train_samples": 11907,
+    "max_validation_samples": 1725,
+    "expected_available_train_samples": 11907,
+    "expected_available_validation_samples": 1725,
+    "validation_mode": "full_split",
+    "image_mean": [0.485, 0.456, 0.406],
+    "image_std": [0.229, 0.224, 0.225]
+  },
+  "data_augmentation_provenance": {
+    "name": "pedestrian_collision_hazard_train_only_v1",
+    "base_validation_test_immutable": true,
+    "base_split_manifest_sha256": "81d9403a5ecd39fb5c4cf7ac8ffd3c79505a9583d683a960cf5a02b6da1fe8f2",
+    "hazard_audit_sha256": "a939eb3c612d02bb97e512789cfc4d7ed4d97640ab04bddd8ae8e70b5516659e",
+    "train_sequences_added": 38,
+    "train_camera_samples_added": 4317,
+    "hazard_holdout_route_groups": {"validation": 8, "test": 8},
+    "privileged_hazard_is_model_input": false
+  },
+  "training": {
+    "seed": 20260723,
+    "epochs": 5,
+    "batch_size": 16,
+    "num_workers": 4,
+    "optimizer": "adamw",
+    "learning_rate": 0.0001,
+    "backbone_learning_rate": 0.00001,
+    "backbone_warmup_epochs": 1,
+    "freeze_backbone_batch_norm_stats": true,
+    "weight_decay": 0.01,
+    "ignore_index": 255,
+    "deterministic": true,
+    "class_weights": [0.04598168, 0.06279949, 0.12245012, 0.29846202, 0.29153371, 2.92488764, 1.72414705, 0.8265236, 3.51836151, 0.18485318],
+    "class_weight_provenance": {
+      "method": "inverse_sqrt_train_pixel_frequency_mean_one",
+      "source_run_id": "m2-semantic-optimization-probe-v1-full-unweighted-seed20260723",
+      "source_manifest_sha256": "78e21cfe3e5c19268a90344238534270e8100cd4116995a267b2065a65f04fcb",
+      "source_split": "train",
+      "source_epoch": 5,
+      "support_pixels": [81328888, 43601572, 11468219, 1930351, 2023191, 20100, 57845, 251712, 13891, 5032231]
+    },
+    "physical_gpu_index": 1,
+    "gpu_resource_policy": "shared_capacity",
+    "gpu_minimum_free_memory_mb": 20000,
+    "require_clean_git": true
+  }
+}

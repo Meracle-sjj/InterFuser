@@ -117,13 +117,16 @@ def _run_epoch(
     class_names,
     optimizer=None,
     backbone_trainable=True,
+    freeze_backbone_batch_norm_stats=False,
     l2_sp_reference=None,
     l2_sp_coefficient=0.0,
 ):
     training = optimizer is not None
     model.train(training)
-    if training and not backbone_trainable:
-        model.backbone.eval()
+    if training and (not backbone_trainable or freeze_backbone_batch_norm_stats):
+        for module in model.backbone.modules():
+            if isinstance(module, torch.nn.modules.batchnorm._BatchNorm):
+                module.eval()
     metrics = ConfusionMetrics(len(class_names), criterion.ignore_index)
     total_loss = 0.0
     total_task_loss = 0.0
@@ -301,6 +304,9 @@ def run_training(config_path, run_id, result_root, train_sample_limit=None):
             "backbone_warmup_epochs": contract["training"].get(
                 "backbone_warmup_epochs", 0
             ),
+            "freeze_backbone_batch_norm_stats": contract["training"].get(
+                "freeze_backbone_batch_norm_stats", False
+            ),
         },
         "pretrained_checkpoint_sha256": contract["backbone"][
             "pretrained_checkpoint_sha256"
@@ -371,6 +377,9 @@ def run_training(config_path, run_id, result_root, train_sample_limit=None):
                 class_names,
                 optimizer=optimizer,
                 backbone_trainable=backbone_trainable,
+                freeze_backbone_batch_norm_stats=contract["training"].get(
+                    "freeze_backbone_batch_norm_stats", False
+                ),
                 l2_sp_reference=l2_sp_reference,
                 l2_sp_coefficient=l2_sp_coefficient,
             )

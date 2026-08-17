@@ -330,6 +330,7 @@ class SemanticPretrainingTests(unittest.TestCase):
                         "reference": "backbone_initialization",
                         "coefficient": 1e-5,
                     },
+                    "freeze_backbone_batch_norm_stats": True,
                 }
             )
             config_path.write_text(json.dumps(config), encoding="utf-8")
@@ -347,6 +348,7 @@ class SemanticPretrainingTests(unittest.TestCase):
             contract["training"]["source_parameter_regularization"]["coefficient"],
             1e-5,
         )
+        self.assertTrue(contract["training"]["freeze_backbone_batch_norm_stats"])
 
     def test_loads_rgb_prefix_from_interfuser_checkpoint(self):
         source = resnet50d(

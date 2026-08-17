@@ -57,6 +57,7 @@ configs/thesis/semantic_pretraining_b0_anchored_staged_probe_v1.json - M2 H1 以
 configs/thesis/interfuser_official_visual_swap_initialization_b0_anchored_v1.json - M2 H1 将B0锚定语义骨干严格替换回作者发布底座的单RGB初始化契约
 configs/thesis/interfuser_b0_anchored_direct_scene_probe_v1.json - M2 H1 B0锚定语义骨干零微调回接后的整体/行人/非行人保持门禁契约
 configs/thesis/semantic_pretraining_b0_anchored_l2sp_probe_v2.json - M2 H1 在B0锚定分阶段语义适配上增加单系数源点保持的L2-SP契约
+configs/thesis/semantic_pretraining_b0_anchored_frozen_bn_probe_v3.json - M2 H1 冻结官方B0归一化缓冲、只适配卷积/affine参数的语义保持契约
 README.md - InterFuser 上游安装、数据生成、训练与评测说明
 requirements.txt - 上游 Python 依赖基线；实际实验以固定 conda 环境为准
 setup_carla.sh - 上游 CARLA 安装脚本；当前服务器实际运行 CARLA 0.9.16

@@ -318,6 +318,12 @@ def load_training_contract(config_path):
     for field in ("deterministic", "require_clean_git"):
         if not isinstance(training.get(field), bool):
             raise TrainingContractError(f"training.{field} must be boolean")
+    if "freeze_backbone_batch_norm_stats" in training and not isinstance(
+        training["freeze_backbone_batch_norm_stats"], bool
+    ):
+        raise TrainingContractError(
+            "training.freeze_backbone_batch_norm_stats must be boolean"
+        )
     class_weights = training.get("class_weights")
     if class_weights is not None:
         if not isinstance(class_weights, list) or len(class_weights) != num_classes:

@@ -20,6 +20,7 @@ interfuser_negative_transfer_repair_protocol_v1.md: M2 H1 视觉负迁移修复�
 interfuser_negative_transfer_repair_protocol_v2.md: M2 H1 全模型插值失败后的RGB隔离协议，完整保留B0下游状态并只插值RGB alias以定位表征不兼容来源。
 interfuser_negative_transfer_repair_protocol_v3.md: M2 H1 两轮插值失败后的B0锚定语义适配协议，以头部warmup和骨干低学习率让交通语义在原驾驶表征上增量生长。
 interfuser_negative_transfer_repair_protocol_v4.md: M2 H1 B0锚定候选近门槛后的单系数L2-SP协议，以官方驾驶骨干参数源点显式约束普通能力保持。
+interfuser_negative_transfer_repair_protocol_v5.md: M2 H1 状态漂移分解后的BN保持协议，冻结官方驾驶域running statistics并只让卷积/affine吸收语义监督。
 experiment_records/: 论文实验事实记录，使用 run ID 与 SHA-256 连接 Git 配置和 results/ 原始产物。
 handoff_pedestrian_visual_review.md: 历史行人单帧复核交接清单；已由连续测量帧碰撞威胁审计替代，仅保留为 584 sequence 的来源索引。
 traffic_element_label_schema.md: 路线关联交通灯、虚拟停止边界及其 CARLA/Leaderboard 几何来源的 schema v2 契约。

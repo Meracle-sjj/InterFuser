@@ -14,6 +14,7 @@ semantic_pretraining_class_weight_probe_v1.json: M2 类别失衡诊断配置，�
 semantic_pretraining_pedestrian_hazard_probe_v1.json: M2 行人危险数据扩充 probe，保持原 validation、五轮预算与 inverse-sqrt 权重，唯一增加经碰撞真值审计的 train sequence。
 semantic_pretraining_b0_anchored_staged_probe_v1.json: M2 H1 负迁移修复语义probe，从官方B0 RGB初始化，先冻结骨干一轮，再以10倍低学习率在同一普通+危险数据和类别权重上适配。
 semantic_pretraining_b0_anchored_l2sp_probe_v2.json: M2 H1 B0源点保持probe，在v1数据/日程完全不变时只增加系数1e-5的RGB参数L2-SP惩罚。
+semantic_pretraining_b0_anchored_frozen_bn_probe_v3.json: M2 H1 状态保持probe，在v1数据/日程不变时冻结B0 BatchNorm running statistics并允许卷积/affine低学习率适配。
 interfuser_official_visual_swap_initialization_b0_anchored_v1.json: M2 H1 B0锚定骨干回接配置，以作者发布全模型为底座，只替换新语义适配RGB并严格守卫660个alias差异。
 interfuser_b0_anchored_direct_scene_probe_v1.json: M2 H1 B0锚定骨干零微调分层验证配置，以作者B0为共同底座并联合约束行人收益、非行人/整体保持和连续帧稳定性。
 interfuser_downstream_split_v1.json: M2 H1 下游划分配置，将 M1 冻结 Town+route holdout 扩展到全量 dataset_index，未见 route group 仅进 train。

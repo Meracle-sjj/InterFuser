@@ -16,6 +16,7 @@ semantic_pretraining_b0_anchored_staged_probe_v1.json: M2 H1 负迁移修复语�
 semantic_pretraining_b0_anchored_l2sp_probe_v2.json: M2 H1 B0源点保持probe，在v1数据/日程完全不变时只增加系数1e-5的RGB参数L2-SP惩罚。
 semantic_pretraining_b0_anchored_frozen_bn_probe_v3.json: M2 H1 状态保持probe，在v1数据/日程不变时冻结B0 BatchNorm running statistics并允许卷积/affine低学习率适配。
 interfuser_official_visual_swap_initialization_b0_anchored_frozen_bn_v2.json: M2 H1 冻结BN候选回接配置，以作者发布全模型为底座，只替换BN统计零漂移的新语义RGB骨干。
+interfuser_b0_anchored_frozen_bn_direct_scene_probe_v2.json: M2 H1 冻结BN候选零微调分层验证配置，复用B0/candidate共同底座与四项严格保持门禁。
 interfuser_official_visual_swap_initialization_b0_anchored_v1.json: M2 H1 B0锚定骨干回接配置，以作者发布全模型为底座，只替换新语义适配RGB并严格守卫660个alias差异。
 interfuser_b0_anchored_direct_scene_probe_v1.json: M2 H1 B0锚定骨干零微调分层验证配置，以作者B0为共同底座并联合约束行人收益、非行人/整体保持和连续帧稳定性。
 interfuser_downstream_split_v1.json: M2 H1 下游划分配置，将 M1 冻结 Town+route holdout 扩展到全量 dataset_index，未见 route group 仅进 train。

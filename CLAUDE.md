@@ -54,6 +54,7 @@ configs/thesis/interfuser_stage2_scene_validation_v1.json - M2 H1 Stage 2 best c
 configs/thesis/interfuser_weight_interpolation_probe_v1.json - M2 H1 B0/V 最终权重插值的负迁移修复筛选与普通场景保持门禁契约
 configs/thesis/interfuser_weight_interpolation_rgb_probe_v2.json - M2 H1 仅插值RGB并保留B0下游全状态的负迁移定位契约
 configs/thesis/semantic_pretraining_b0_anchored_staged_probe_v1.json - M2 H1 以官方B0 RGB为源点、头部warmup后低学习率解冻的受约束语义适配契约
+configs/thesis/interfuser_official_visual_swap_initialization_b0_anchored_v1.json - M2 H1 将B0锚定语义骨干严格替换回作者发布底座的单RGB初始化契约
 README.md - InterFuser 上游安装、数据生成、训练与评测说明
 requirements.txt - 上游 Python 依赖基线；实际实验以固定 conda 环境为准
 setup_carla.sh - 上游 CARLA 安装脚本；当前服务器实际运行 CARLA 0.9.16

@@ -62,7 +62,7 @@
     },
     "leaderboard_route_scenario": {
       "path": "leaderboard/leaderboard/scenarios/route_scenario.py",
-      "sha256": "cc76d3f15ef10725a29607dab8f38b3aca17c266f540428c6c84c1fa7a321635"
+      "sha256": "1ac7cb505e5e332a2cd6eff443841d076457a59b964689c681a68d85fc9685ce"
     },
     "scenario_runner_route_scenario": {
       "path": "scenario_runner/srunner/scenarios/route_scenario.py",

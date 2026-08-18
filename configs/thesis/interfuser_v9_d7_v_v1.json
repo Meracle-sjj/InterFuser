@@ -9,18 +9,22 @@
     "scenario_runner"
   ],
   "runtime": {
-    "python": "3.10.19",
+    "agent_cuda_visible_device": 1,
+    "allow_existing_compute_processes_below_threshold": false,
     "carla": "0.9.16",
-    "leaderboard": "1.0",
-    "agent_cuda_visible_device": 6,
-    "carla_graphics_adapter": 7,
-    "carla_port": 2155,
-    "traffic_manager_port": 2255,
-    "carla_start_timeout_seconds": 180,
     "carla_client_timeout_seconds": 120,
-    "external_route_timeout_seconds": 5400,
+    "carla_graphics_adapter": 1,
+    "carla_port": 2155,
     "carla_provider_seed_offset": 2000,
-    "gpu_busy_memory_threshold_mb": 1024
+    "carla_start_timeout_seconds": 180,
+    "external_route_timeout_seconds": 5400,
+    "gpu_release_timeout_seconds": 300,
+    "gpu_busy_memory_threshold_mb": 1024,
+    "gpu_minimum_free_memory_mb": 12288,
+    "gpu_resource_policy": "shared_capacity",
+    "leaderboard": "1.0",
+    "python": "3.10.19",
+    "traffic_manager_port": 2255
   },
   "checkpoint": {
     "architecture": "interfuser_baseline",

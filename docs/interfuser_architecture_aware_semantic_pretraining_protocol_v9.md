@@ -10,7 +10,7 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 状态 | **FROZEN：Owner 2026-08-18 批准直接执行** |
+| 状态 | **EXECUTED-PASSED：2026-08-18 四判据全过（行人 5/5、非行人最差 −0.112%、整体最差 −0.014%、时序双改善）；证据见 `docs/experiment_records/2026-08-18-m2-v9-architecture-semantic-pretraining-v1.md`；test/D7 解冻准入成立** |
 | 上游 | `docs/KEYreferences.md`（文献否定/揭示）、v8b 证据链终点、Stage 2 v2 协议 |
 | 待建配置 | `configs/thesis/interfuser_architecture_semantic_pretraining_v1.json` |
 

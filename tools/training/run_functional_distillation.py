@@ -151,6 +151,9 @@ def _train_epochs(contract, pair, loaders, criterion, device, class_names, run_m
     training = contract["training"]
     student = pair["student"]
     seg_model = pair["seg_model"]
+    for name, parameter in seg_model.named_parameters():
+        if not name.startswith("backbone."):
+            parameter.requires_grad_(True)
     optimizer = torch.optim.AdamW(
         [
             {

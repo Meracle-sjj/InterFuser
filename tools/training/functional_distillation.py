@@ -478,7 +478,11 @@ def assert_pair_invariants(student, init_checkpoint_path):
     current = student.state_dict()
     if set(initial) != set(current):
         raise FunctionalContractError("student state key set differs from initialization")
-    changed = [key for key in current if not torch.equal(current[key], initial[key])]
+    changed = [
+        key
+        for key in current
+        if not torch.equal(current[key].detach().cpu(), initial[key])
+    ]
     non_rgb_changed = [key for key in changed if not key.startswith("rgb_backbone.")]
     if non_rgb_changed:
         raise FunctionalContractError(

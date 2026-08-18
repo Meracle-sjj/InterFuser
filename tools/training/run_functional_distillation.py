@@ -228,6 +228,25 @@ def _train_epochs(contract, pair, loaders, criterion, device, class_names, run_m
             "validation": validation_metrics,
         }
         epochs.append(epoch_record)
+        print(
+            json.dumps(
+                {
+                    "epoch": epoch_record["epoch"],
+                    "train_loss": round(train_metrics["loss"], 6),
+                    "train_task": round(train_metrics["task_loss"], 6),
+                    "train_functional": round(
+                        train_metrics["functional_distillation_penalty"], 6
+                    ),
+                    "val_mean_iou": round(validation_metrics["mean_iou"], 6),
+                    "val_functional": round(
+                        validation_metrics["functional_distillation_penalty"], 6
+                    ),
+                    "seconds": train_metrics["duration_seconds"]
+                    + validation_metrics["duration_seconds"],
+                }
+            ),
+            flush=True,
+        )
         validation_miou = validation_metrics["mean_iou"]
         if validation_miou > best_validation_miou:
             best_epoch = epoch_index + 1
@@ -262,7 +281,7 @@ def run_training(config_path, run_id, result_root="results/thesis_m2"):
     class_names = [item["name"] for item in contract["class_config"]["classes"]]
     criterion = DeterministicCrossEntropyLoss(
         ignore_index=contract["ignore_index"], class_weights=contract["class_weights"]
-    )
+    ).to(device)
     run_manifest = {
         "schema_version": 1,
         "status": "running",

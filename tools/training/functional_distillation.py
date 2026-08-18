@@ -32,6 +32,10 @@ for import_root in (REPO_ROOT, INTERFUSER_ROOT):
     if str(import_root) not in sys.path:
         sys.path.insert(0, str(import_root))
 
+from tools.data.audit_semantic_pretraining_data import (  # noqa: E402
+    AuditError,
+    load_class_config,
+)
 from tools.training.semantic_pretraining import (  # noqa: E402
     ConfusionMetrics,
     DeterministicCrossEntropyLoss,
@@ -154,7 +158,10 @@ def load_functional_contract(config_path):
     if training.get("gpu_resource_policy") != "shared_capacity":
         raise FunctionalContractError("gpu_resource_policy must be shared_capacity")
 
-    class_config = json.loads(class_config_path.read_text())
+    try:
+        class_config = load_class_config(class_config_path)
+    except AuditError as exc:
+        raise FunctionalContractError(str(exc)) from exc
     contract.update(
         {
             "sha256": sha256_file(config_path),

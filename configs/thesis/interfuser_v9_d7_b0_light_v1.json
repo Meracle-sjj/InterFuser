@@ -2,7 +2,7 @@
   "schema_version": 1,
   "status": "frozen",
   "protocol_document": "docs/interfuser_architecture_aware_semantic_pretraining_protocol_v9.md",
-  "code_anchor": "PENDING-COMMIT",
+  "code_anchor": "b82b1f0",
   "runtime_code_roots": [
     "interfuser",
     "leaderboard",

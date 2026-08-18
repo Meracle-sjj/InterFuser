@@ -9,7 +9,7 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 状态 | **FROZEN：Owner 2026-08-18 审阅批准（含 §2.1 LiDAR 在场理由增补），同日冻结** |
+| 状态 | **EXECUTED：2026-08-18 执行完毕，语义准入失败（mIoU 0.26303 < 0.46324），按 §4 方向停止；证据见 `docs/experiment_records/2026-08-18-m2-functional-distill-probe-v1.md`**（前状态 FROZEN 2026-08-18） |
 | 上游协议 | `docs/interfuser_negative_transfer_repair_protocol_v8.md`（§3 v8b 准入）、`docs/interfuser_negative_transfer_repair_protocol_v7.md`（训练配方与门禁基准） |
 | 待建配置 | `configs/thesis/semantic_pretraining_b0_functional_distill_probe_v1.json` |
 

@@ -234,9 +234,11 @@ class ExportTests(unittest.TestCase):
             "tools.training.functional_distillation.validate_backbone_export",
             lambda export: None,
         ):
-            export = export_student_backbone(model)
-        self.assertIn("0.weight", export)
-        self.assertNotIn("fc.weight", export)
+            export = export_student_backbone(model, "a" * 64)
+        self.assertEqual(export["architecture"], "resnet50d")
+        self.assertEqual(export["source_training_config_sha256"], "a" * 64)
+        self.assertIn("backbone.0.weight", export["state_dict"])
+        self.assertNotIn("backbone.fc.weight", export["state_dict"])
 
 
 class ContractTests(unittest.TestCase):

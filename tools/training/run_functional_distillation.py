@@ -339,7 +339,10 @@ def run_training(config_path, run_id, result_root="results/thesis_m2"):
         pair["student"], contract["bound_paths"]["student_initialization_checkpoint"]
     )
     backbone_export_path = run_directory / "backbone_resnet50d.pth"
-    torch.save(export_student_backbone(pair["student"]), backbone_export_path)
+    torch.save(
+        export_student_backbone(pair["student"], contract["sha256"]),
+        backbone_export_path,
+    )
     best_checkpoint_path = run_directory / "checkpoint_best.pth"
     torch.save(
         {

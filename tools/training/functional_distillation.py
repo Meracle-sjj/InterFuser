@@ -515,12 +515,18 @@ def assert_pair_invariants(student, init_checkpoint_path):
     }
 
 
-def export_student_backbone(student):
-    """Export the trained rgb_backbone in the v7-compatible timm format."""
-    export = OrderedDict(
-        (key, value.detach().cpu())
+def export_student_backbone(student, config_sha256):
+    """Export the trained rgb_backbone in the v7-compatible container format."""
+    state_dict = OrderedDict(
+        (f"backbone.{key}", value.detach().cpu())
         for key, value in student.rgb_backbone.state_dict().items()
         if key not in {"fc.weight", "fc.bias"}
     )
+    export = {
+        "format_version": 1,
+        "architecture": "resnet50d",
+        "source_training_config_sha256": config_sha256,
+        "state_dict": state_dict,
+    }
     validate_backbone_export(export)
     return export

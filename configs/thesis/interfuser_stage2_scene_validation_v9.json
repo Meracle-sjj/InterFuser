@@ -4,12 +4,12 @@
   "run_id": "m2-interfuser-stage2-scene-validation-v9-20260818-v1",
   "protocol_document": "docs/interfuser_architecture_aware_semantic_pretraining_protocol_v9.md",
   "pair_run_manifest": {
-    "path": "results/thesis_m2/m2-interfuser-official-stage2-scene-split-v2-seed20260814-20260816-v1/run_manifest.json",
-    "sha256": "8783fd2851024c24def72949a5204bc8045d36115eca4b2f60b2ef748ce84cc4"
+    "path": "results/thesis_m2/m2-interfuser-official-stage2-v9-pair-seed20260814-20260818-v1/run_manifest.json",
+    "sha256": "174f7f0a38d5e33f0bb6d6fda3ba04886c5e9ed94f0df850189694e1a64e196a"
   },
   "pair_training_config": {
-    "path": "configs/thesis/interfuser_official_stage2_pilot_scene_split_v2.json",
-    "sha256": "fb92645d3f102979f7c74dec3543a88fdccdeed8d5fccc03464fff1bf6919eae"
+    "path": "configs/thesis/interfuser_official_stage2_pilot_scene_split_v9.json",
+    "sha256": "991d94466c9a471ec3deb81e4e772e2475119a95b8f9609d2856c996d3a1a570"
   },
   "downstream_split_manifest": {
     "path": "results/thesis_m2/interfuser_downstream_split_v2_scene_seed20260816_20260816-v1/split_manifest.json",

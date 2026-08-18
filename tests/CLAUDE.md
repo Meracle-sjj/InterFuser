@@ -14,6 +14,7 @@ test_check_leaderboard_stop_target_geometry.py: 验证停止边界独立几何�
 test_collector_stop_exclusion.py: 验证采集器只保存目标窗口并排除错误停止目标。
 test_export_stop_boundary_labels.py: 验证虚拟边界 mask/manifest 导出且不改写源 RGB。
 test_functional_distillation.py: 验证 v8b 前摄掩码几何与官方 RGB 变换同构、逐头归一化 L2、LUT/掩码解码、互斥契约、非 RGB 与 BN 冻结不变量及导出过滤。
+test_architecture_pretraining.py: 验证 v9 驾驶损失移植的掩码/权重/空防护与组合权重契约。
 test_evaluation_runtime_resources.py: 验证 runner 默认拒绝外来 GPU compute owner、显式共享仍受总显存阈值限制，并能回收包装进程已退出但子进程仍存活的完整 POSIX 进程组。
 test_leaderboard_stop_targets.py: 验证 Leaderboard 红灯触发体到虚拟边界和路线距离的几何构造。
 test_profile_traffic_element_routes.py: 验证路线交通灯覆盖、hard-negative 点和距离评分。

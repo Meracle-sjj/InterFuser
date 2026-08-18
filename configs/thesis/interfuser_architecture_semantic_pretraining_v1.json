@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "status": "pretraining",
+  "protocol_document": "docs/interfuser_architecture_aware_semantic_pretraining_protocol_v9.md",
+  "model": {
+    "name": "interfuser_baseline"
+  },
+  "initial_checkpoint": "results/thesis_m2/m2-interfuser-official-visual-swap-init-v1-seed20260723-20260814-v1/official_b0_initial_checkpoint.pth",
+  "initial_checkpoint_sha256": "15d70aa489f33b84b8cad0988aa0b8f1787ee626069d8c95c3e9e518e781a0ce",
+  "semantic_head_checkpoint": "results/thesis_m2/m2-semantic-b0-anchored-distill-probe-v1-seed20260723-20260817-v1/checkpoint_best.pth",
+  "semantic_head_checkpoint_sha256": "00fd0c20de20dd581851383c5f4c8690e18059f75f205149505fc717b5fb2ecd",
+  "semantic_head_decoder_channels": 64,
+  "semantic_head_dropout": 0.1,
+  "class_config": "configs/thesis/semantic_classes_v1.json",
+  "class_config_sha256": "796222592efb68407a32bfdf9a03907b4631cf3f30d0d6a81528010e50f0b612",
+  "split_manifest": "results/thesis_m1/semantic_split_pedestrian_hazard_augmented_v1_seed20260804.json",
+  "split_manifest_sha256": "ea4e5878bf9b8621d70881507ce44b3f4c25cece274d4580961e554e2e6de29b",
+  "corpus_audit": {
+    "manifest": "results/thesis_m1/functional_distillation_corpus_audit_v1/audit_manifest.json",
+    "manifest_sha256": "ad8565beac8b6a7665e89c82990665a66d676826fb313fe9497eebea2d73ca42",
+    "train_index": {
+      "path": "results/thesis_m1/functional_distillation_corpus_audit_v1/train_index.txt",
+      "sha256": "d40090f2de70606789192c9f32a033c86f77de3ee1fe8cc8ddf67a47784a949d"
+    },
+    "validation_index": {
+      "path": "results/thesis_m1/functional_distillation_corpus_audit_v1/validation_index.txt",
+      "sha256": "e85be63de24505254683984baf5e84903612ebb131a3025ad8d390a426870b9f"
+    }
+  },
+  "dataset": {
+    "root": "/data1/shijj/interfuser_data",
+    "towns": [
+      1,
+      3,
+      4,
+      5
+    ],
+    "weathers": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      15,
+      20
+    ],
+    "lidar_y_axis_multiplier": 1.0,
+    "navigation_frame": "carla0916_compass",
+    "missing_navigation_policy": "drop"
+  },
+  "training": {
+    "seed": 20260723,
+    "epochs": 5,
+    "batch_size": 16,
+    "num_workers": 4,
+    "optimizer": "adamw",
+    "learning_rate": 0.0001,
+    "weight_decay": 0.01,
+    "ignore_index": 255,
+    "deterministic": true,
+    "aux_coefficient": 1.0,
+    "driving_loss_weights": {
+      "traffic": 0.5,
+      "waypoints": 0.2,
+      "velocity": 0.05,
+      "junction": 0.05,
+      "red_light": 0.1,
+      "stop_sign": 0.01
+    },
+    "class_weights": [
+      0.04598168,
+      0.06279949,
+      0.12245012,
+      0.29846202,
+      0.29153371,
+      2.92488764,
+      1.72414705,
+      0.8265236,
+      3.51836151,
+      0.18485318
+    ],
+    "physical_gpu_index": 1,
+    "gpu_resource_policy": "shared_capacity",
+    "gpu_minimum_free_memory_mb": 20000,
+    "require_clean_git": true
+  }
+}

@@ -224,7 +224,7 @@ class FunctionalFrameDataset(Dataset):
     def __getitem__(self, index):
         route_dir, frame_id = self.base.route_frames[index]
         data, targets = self.base._get_item_impl(index)
-        mask_path = Path(route_dir) / "seg_front" / f"{frame_id}.png"
+        mask_path = Path(route_dir) / "seg_front" / f"{int(frame_id):04d}.png"
         with Image.open(mask_path) as image:
             resized = image.resize(self.resize_wh, Image.Resampling.NEAREST)
             cropped = self.center_crop(resized)

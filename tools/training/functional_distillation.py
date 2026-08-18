@@ -478,12 +478,19 @@ def assert_pair_invariants(student, init_checkpoint_path):
     current = student.state_dict()
     if set(initial) != set(current):
         raise FunctionalContractError("student state key set differs from initialization")
+    # InterFuser 将同一 resnet 模块注册为 rgb_backbone 与 rgb_patch_embed.backbone，
+    # state_dict 出现同张量双键（330 别名的机制本体）；以存储身份判定归属。
+    rgb_storages = {
+        current[key].data_ptr() for key in current if key.startswith("rgb_backbone.")
+    }
     changed = [
         key
         for key in current
         if not torch.equal(current[key].detach().cpu(), initial[key])
     ]
-    non_rgb_changed = [key for key in changed if not key.startswith("rgb_backbone.")]
+    non_rgb_changed = [
+        key for key in changed if current[key].data_ptr() not in rgb_storages
+    ]
     if non_rgb_changed:
         raise FunctionalContractError(
             f"non-RGB tensors changed during training: {non_rgb_changed[:5]}"
@@ -491,7 +498,7 @@ def assert_pair_invariants(student, init_checkpoint_path):
     rgb_bn_changed = [
         key
         for key in changed
-        if key.startswith("rgb_backbone.")
+        if current[key].data_ptr() in rgb_storages
         and ("running_mean" in key or "running_var" in key)
     ]
     if rgb_bn_changed:
@@ -502,6 +509,9 @@ def assert_pair_invariants(student, init_checkpoint_path):
         "full_model_tensors": len(current),
         "changed_tensors": len(changed),
         "changed_tensors_all_rgb": True,
+        "rgb_alias_key_count": sum(
+            1 for key in current if current[key].data_ptr() in rgb_storages
+        ),
     }
 
 

@@ -196,6 +196,25 @@ class InvariantTests(unittest.TestCase):
             self.assertEqual(report["changed_tensors"], 1)
             self.assertTrue(report["changed_tensors_all_rgb"])
 
+    def test_tied_alias_keys_count_as_rgb(self):
+        class _TiedModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.rgb_backbone = torch.nn.Sequential(
+                    torch.nn.Conv2d(3, 2, 1), torch.nn.BatchNorm2d(2)
+                )
+                self.duplicate = self.rgb_backbone
+                self.other = torch.nn.Linear(4, 4)
+
+        model = _TiedModel()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "init.pth"
+            self._checkpoint(path, model)
+            model.rgb_backbone[0].weight.data.add_(1.0)
+            report = assert_pair_invariants(model, path)
+            self.assertTrue(report["changed_tensors_all_rgb"])
+            self.assertGreater(report["rgb_alias_key_count"], 0)
+
     def test_rgb_bn_buffer_change_raises(self):
         model = _SurrogateModel()
         with tempfile.TemporaryDirectory() as tmp:

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "status": "frozen",
   "protocol_document": "docs/interfuser_architecture_aware_semantic_pretraining_protocol_v9.md",
-  "code_anchor": "ac381b2",
+  "code_anchor": "PENDING-COMMIT",
   "runtime_code_roots": [
     "interfuser",
     "leaderboard",
@@ -46,7 +46,7 @@
     },
     "agent": {
       "path": "leaderboard/team_code/interfuser_agent.py",
-      "sha256": "daa486d5197a1fc7fd290ae87e675500ae928c3110cf57ea2643e80158d3eaca"
+      "sha256": "f15f0a6bfac76d11eddadfb32707cbcc50c839e55648cf5e0094c2c161047236"
     },
     "agent_config": {
       "path": "leaderboard/team_code/interfuser_config.py",
@@ -160,7 +160,9 @@
     "INTERFUSER_REUSE_CURRENT_WORLD": "1",
     "INTERFUSER_BG_WARMUP_TICKS": "40",
     "INTERFUSER_LANE_CENTER_STEER_GAIN": "0.5",
-    "PYTHONOPTIMIZE": "1"
+    "PYTHONOPTIMIZE": "1",
+    "INTERFUSER_LIDAR_Y_AXIS_MULTIPLIER": "1.0",
+    "INTERFUSER_LIDAR_DEBUG": "1"
   },
   "aggregation": {
     "seed_reduction": "mean_per_route",

@@ -438,7 +438,11 @@ class InterfuserAgent(autonomous_agent.AutonomousAgent):
         result['raw_lidar'] = lidar_data
 
         lidar_unprocessed = lidar_data[:, :3]
-        lidar_unprocessed[:, 1] *= -1
+        # 2026-08-19 门禁#2关闭：CARLA 0.9.16 点云无需作者 0.9.10 时代的 y 翻转；
+        # 离线审计参考带：+1.0→~11.5k 非零格（正确），-1.0→~26（近空）。
+        lidar_unprocessed[:, 1] *= float(
+            os.environ.get("INTERFUSER_LIDAR_Y_AXIS_MULTIPLIER", "-1.0")
+        )
         full_lidar = transform_2d_points(
             lidar_unprocessed,
             np.pi / 2 - compass,
@@ -449,6 +453,11 @@ class InterfuserAgent(autonomous_agent.AutonomousAgent):
             -pos[1],
         )
         lidar_processed = lidar_to_histogram_features(full_lidar, crop=224)
+        if os.environ.get("INTERFUSER_LIDAR_DEBUG") == "1":
+            print(
+                f"[LIDARDBG] nonzero={int(np.count_nonzero(lidar_processed))}",
+                flush=True,
+            )
         if self.step % 2 == 0 or self.step < 4:
             self.prev_lidar = lidar_processed
         result["lidar"] = self.prev_lidar

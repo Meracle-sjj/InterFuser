@@ -6,6 +6,9 @@
 CLAUDE.md: M2 训练工具模块地图，约束数据、模型、运行编排和迁移导出共享同一版本化契约。
 semantic_pretraining.py: 提供 split 驱动的 RGB/语义数据集、CARLA 标签映射、同构 ResNet50d-FPN、ImageNet/InterFuser B0骨干来源、分阶段低学习率、可选L2-SP与BN统计冻结契约、类别权重损失、混淆指标、归一化L2特征蒸馏与冻结B0教师构造、严格迁移兼容性。
 run_semantic_pretraining.py: 消费 M2 配置执行单机训练/验证，守卫 GPU/Git provenance，支持头部warmup、分层学习率、L2-SP归约、骨干BN持续eval与可选B0教师特征蒸馏，并原子固化 checkpoint、骨干导出和运行事实。
+audit_functional_distillation_corpus.py: 校验语义语料每帧 RGB/seg/LiDAR/measurements 完备性与帧号连续性，以参考带判定 LiDAR 坐标乘子并产出 train/validation 索引与审计 manifest；文件洞或 LiDAR 异常即停机。
+functional_distillation.py: v8b BCT 功能蒸馏库——契约哈希装载、v7 口径 10 类 LUT 与前摄掩码几何、carla 数据集包装、冻结师生对与 layer1-4 前向钩子、逐头归一化 L2 输出损失、非 RGB/BN 不变量断言与骨干导出。
+run_functional_distillation.py: v8b 训练入口——镜像语义 runner 的 GPU/Git 纪律，五轮双前向 probe、warmup 与分层学习率、OOM 预注册回退 bs8×累积2，固化 manifest/checkpoint/骨干导出。
 evaluate_semantic_hazard_holdout.py: 将训练不可见的 route-group 行人危险 holdout 投影到冻结语义模型，对不同 checkpoint 输出同口径 mIoU、macro-F1 与逐类指标。
 summarize_semantic_hazard_holdout.py: 严格校验 baseline/augmented 专项样本、类别权重和真值边界相同后，归约全局与逐类配对差值。
 summarize_semantic_learning_curve.py: 验证 pilot run 的完整预算矩阵、嵌套 train 样本、相同完整 validation、provenance 与产物哈希，并确定性归约学习曲线。

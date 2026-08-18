@@ -316,6 +316,11 @@ def build_functional_pair(contract):
     )
     student.eval()
     student.requires_grad_(False)
+    # cuDNN RNN backward 仅在 train 模式可用；GRU 无 dropout，train/eval 前向语义一致，
+    # BN 与 Transformer dropout 仍保持 eval（冻结统计、无噪声注入）。
+    for module in student.modules():
+        if isinstance(module, torch.nn.RNNBase):
+            module.train()
 
     functional = contract["functional"]
     seg_contract_view = {
